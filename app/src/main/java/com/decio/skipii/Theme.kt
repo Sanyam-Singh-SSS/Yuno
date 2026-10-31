@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -20,6 +21,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -30,10 +32,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.DeviceFontFamilyName
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
@@ -440,9 +446,10 @@ object ThemeSettings {
 
     var seed by mutableStateOf<String?>(null)
         private set
-    /** "system", "light" or "dark". */
+    /** "system", "light", "dark" or "amoled" (dark on pure black, Derek 2026-10-14). */
     var mode by mutableStateOf("system")
         private set
+    val amoled: Boolean get() = mode == "amoled"
 
     fun init(context: Context) {
         val p = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).also { prefs = it }
@@ -506,9 +513,30 @@ fun schemeFor(context: Context, seedHex: String?, dark: Boolean): ColorScheme =
         completeLedgiiScheme(seedValue, seedScheme(seedValue, dark))
     }
 
+/**
+ * AMOLED: the page is pure black (pixels off) and every container is pulled toward black,
+ * the higher ones less, so tone still separates cards, sheets and the nav from the page.
+ */
+fun ColorScheme.amoled(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = androidx.compose.ui.graphics.lerp(surfaceContainerLow, Color.Black, 0.55f),
+    surfaceContainer = androidx.compose.ui.graphics.lerp(surfaceContainer, Color.Black, 0.45f),
+    surfaceContainerHigh = androidx.compose.ui.graphics.lerp(surfaceContainerHigh, Color.Black, 0.35f),
+    surfaceContainerHighest = androidx.compose.ui.graphics.lerp(surfaceContainerHighest, Color.Black, 0.25f),
+    surfaceVariant = androidx.compose.ui.graphics.lerp(surfaceVariant, Color.Black, 0.25f),
+    surfaceBright = androidx.compose.ui.graphics.lerp(surfaceBright, Color.Black, 0.25f),
+)
+
+/** [schemeFor] in the chosen mode, AMOLED included. */
+fun themedScheme(context: Context, seedHex: String?, dark: Boolean): ColorScheme =
+    schemeFor(context, seedHex, dark).let { if (dark && ThemeSettings.amoled) it.amoled() else it }
+
 @Composable
 fun isDarkTheme(): Boolean = when (ThemeSettings.mode) {
-    "dark" -> true
+    "dark", "amoled" -> true
     "light" -> false
     else -> isSystemInDarkTheme()
 }
@@ -518,7 +546,7 @@ fun isDarkTheme(): Boolean = when (ThemeSettings.mode) {
 fun SkipiiTheme(content: @Composable () -> Unit) {
     val dark = isDarkTheme()
     val context = LocalContext.current
-    val scheme = schemeFor(context, ThemeSettings.seed, dark)
+    val scheme = themedScheme(context, ThemeSettings.seed, dark)
     SystemBars(dark, scheme.surface)
     MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = Typography()) {
         CompositionLocalProvider(
@@ -527,9 +555,38 @@ fun SkipiiTheme(content: @Composable () -> Unit) {
             // Text and icons without an explicit color follow the theme. Without this they
             // default to black, which vanished on dark surfaces (the dark-mode bug).
             LocalContentColor provides scheme.onSurface,
+            // Text in its own direction, laid out as in English (see AndroidManifest's supportsRtl).
+            LocalTextStyle provides LocalTextStyle.current.merge(OwnDirectionText),
             content = content,
         )
     }
+}
+
+/**
+ * The layout is the English one on every phone (supportsRtl="false", Derek, 2026-10-30: nothing
+ * moves on an Arabic phone), but each text runs in its own direction (Unicode's first strong
+ * letter): an Arabic title right to left, so its punctuation lands where it belongs, still
+ * left-aligned like the English. Compose's default gave every text the layout's direction, so an
+ * Arabic title's full stop showed at its start. Every Text here reads [LocalTextStyle] (none passes
+ * a typography style); text fields set the same two fields on their own [TextStyle].
+ */
+internal val OwnDirectionText = TextStyle(textDirection = TextDirection.Content, textAlign = TextAlign.Left)
+
+/**
+ * Whether the phone's language is written right to left (Arabic, Hebrew, Persian, Urdu…). The app's
+ * layout ignores it (supportsRtl="false"), so this is read from the locale, not the layout direction.
+ */
+@Composable
+fun rememberRtlLanguage(): Boolean {
+    val locale = LocalConfiguration.current.locales[0]
+    return remember(locale) { android.text.TextUtils.getLayoutDirectionFromLocale(locale) == android.view.View.LAYOUT_DIRECTION_RTL }
+}
+
+/** True while the open player paints the status bar black over its video: icons go white. */
+object StatusBarOverVideo {
+    var on by mutableStateOf(false)
+    /** The Shorts tab: video under both system bars, so both bars' icons go white. */
+    var shorts by mutableStateOf(false)
 }
 
 /**
@@ -541,11 +598,13 @@ fun SkipiiTheme(content: @Composable () -> Unit) {
 private fun SystemBars(dark: Boolean, windowBg: Color) {
     val view = LocalView.current
     if (view.isInEditMode) return
+    val overVideo = StatusBarOverVideo.on || StatusBarOverVideo.shorts
+    val navOverVideo = StatusBarOverVideo.shorts
     SideEffect {
         val window = (view.context as? Activity)?.window ?: return@SideEffect
         val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = !dark
-        controller.isAppearanceLightNavigationBars = !dark
+        controller.isAppearanceLightStatusBars = !dark && !overVideo
+        controller.isAppearanceLightNavigationBars = !dark && !navOverVideo
     }
     DisposableEffect(windowBg) {
         (view.context as? Activity)?.window?.setBackgroundDrawable(ColorDrawable(windowBg.toArgb()))

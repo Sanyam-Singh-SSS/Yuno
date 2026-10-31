@@ -2,9 +2,16 @@ package com.decio.skipii
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.MediaFormat
@@ -17,6 +24,7 @@ import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -76,7 +84,43 @@ data class VideoDetails(
     val qualities: List<Int>,
     /** Width / height of the chosen stream, known before the first frame; null if unknown. */
     val aspect: Float? = null,
+    /** The video's chapters in order (from its description timestamps / YouTube's markers); empty if none. */
+    val chapters: List<Chapter> = emptyList(),
+    /** YouTube's storyboards (the scrub preview's frames), smallest frames first; empty if none. */
+    val storyboards: List<Storyboard> = emptyList(),
 )
+
+@Immutable
+data class Chapter(val startMs: Long, val title: String)
+
+/**
+ * One storyboard level: sheets ([urls]) of [columns] × [rows] frames of [frameWidth] × [frameHeight]
+ * px, [count] frames in all, one every [msPerFrame] (0 = spread evenly over the video).
+ */
+@Immutable
+data class Storyboard(
+    val urls: List<String>,
+    val frameWidth: Int,
+    val frameHeight: Int,
+    val columns: Int,
+    val rows: Int,
+    val count: Int,
+    val msPerFrame: Int,
+) {
+    /** The sheet and the spot in it of the frame shown at [ms] of a [durationMs] video. */
+    fun frameAt(ms: Long, durationMs: Long): StoryboardFrame? {
+        if (urls.isEmpty() || count <= 0 || columns <= 0 || rows <= 0) return null
+        val step = if (msPerFrame > 0) msPerFrame.toLong() else (durationMs / count).coerceAtLeast(1L)
+        val n = (ms / step).toInt().coerceIn(0, count - 1)
+        val perSheet = columns * rows
+        val url = urls.getOrNull(n / perSheet) ?: return null
+        val k = n % perSheet
+        return StoryboardFrame(url, (k % columns) * frameWidth, (k / columns) * frameHeight, frameWidth, frameHeight)
+    }
+}
+
+@Immutable
+data class StoryboardFrame(val url: String, val x: Int, val y: Int, val width: Int, val height: Int)
 
 @Immutable
 data class ChannelDetails(
@@ -125,7 +169,14 @@ data class Comment(
 )
 
 @Immutable
-data class CommentsPage(val comments: List<Comment>, val total: Int, val disabled: Boolean, val next: String?)
+data class CommentsPage(
+    val comments: List<Comment>,
+    val total: Int,
+    val disabled: Boolean,
+    val next: String?,
+    /** The video's chapters, read off the same first `next` page (see [CommentFeed.parseChapters]). */
+    val chapters: List<Chapter> = emptyList(),
+)
 
 /** Everything the app asks of YouTube goes through here. All calls are blocking-safe (IO). */
 object YouTube {
@@ -146,8 +197,12 @@ object YouTube {
         else service.suggestionExtractor.suggestionList(q)
     }
 
-    suspend fun details(id: String): VideoDetails = withContext(Dispatchers.IO) {
-        val info = StreamCache.getOrLoad(id)
+    /**
+     * [wait] false: no quiet retries through a bot check ([BotCheck.withoutWaiting]) — Shorts
+     * would rather move on than hold a short on a spinner for up to half a minute.
+     */
+    suspend fun details(id: String, wait: Boolean = true): VideoDetails = withContext(Dispatchers.IO) {
+        val info = if (wait) BotCheck.retrying(id) { StreamCache.getOrLoad(id) } else BotCheck.withoutWaiting(id) { StreamCache.getOrLoad(id) }
         val picked = StreamSelection.pick(info)
         VideoDetails(
             item = VideoItem(
@@ -173,6 +228,13 @@ object YouTube {
             qualities = StreamSelection.heights(info),
             aspect = (if (picked.usesSeparate) picked.video else picked.muxed)
                 ?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height },
+            chapters = info.streamSegments.orEmpty()
+                .map { Chapter(it.startTimeSeconds * 1000L, it.title.orEmpty().trim()) }
+                .sortedBy { it.startMs },
+            storyboards = info.previewFrames.orEmpty()
+                .filter { it.urls.isNotEmpty() && it.frameWidth > 0 && it.frameHeight > 0 }
+                .map { Storyboard(it.urls, it.frameWidth, it.frameHeight, it.framesPerPageX, it.framesPerPageY, it.totalCount, it.durationPerFrame) }
+                .sortedBy { it.frameWidth },
         )
     }
 
@@ -263,7 +325,7 @@ object YouTube {
     fun friendlyError(t: Throwable): String = when (t) {
         is AgeRestrictedContentException -> "This video is age-restricted and needs a YouTube account to watch."
         is GeographicRestrictionException -> "This video isn't available in your country."
-        is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException ->
+        is SignInConfirmNotBotException ->
             "YouTube is asking to confirm you're not a bot. Try again in a few minutes."
         is org.schabi.newpipe.extractor.exceptions.PrivateContentException -> "This video is private."
         // Members-only videos (e.g. "Insider Edition") need a channel membership; Skipii's
@@ -285,7 +347,11 @@ object YouTube {
  */
 object StreamCache {
     private const val MAX_AGE_MS = 4 * 60 * 60 * 1000L
-    private class Entry(val info: StreamInfo, val loadedAt: Long)
+    /** A load whose stream request was refused ([keepRefused]): the next open after this tries again. */
+    private const val REFUSED_MAX_AGE_MS = 10 * 60 * 1000L
+    private class Entry(val info: StreamInfo, val loadedAt: Long, val refused: Boolean = false) {
+        val fresh get() = System.currentTimeMillis() - loadedAt < if (refused) REFUSED_MAX_AGE_MS else MAX_AGE_MS
+    }
     private val entries = ConcurrentHashMap<String, Entry>()
 
     /**
@@ -297,8 +363,15 @@ object StreamCache {
     /** The phone switched networks: every cached URL is now bound to the old address. */
     fun invalidateAll() = entries.clear()
 
-    fun get(id: String): StreamInfo? =
-        entries[id]?.takeIf { System.currentTimeMillis() - it.loadedAt < MAX_AGE_MS }?.info
+    fun get(id: String): StreamInfo? = entries[id]?.takeIf { it.fresh }?.info
+
+    /**
+     * Keeps [StreamsRefused.info] for the media source to play after all ([BotCheck] gave up),
+     * not for long. [getOrLoad] never returns it: every load tries for the real streams again.
+     */
+    fun keepRefused(id: String, info: StreamInfo) {
+        entries[id] = Entry(info, System.currentTimeMillis(), refused = true)
+    }
 
     /**
      * One extraction per video at a time: a prefetch (touch-down, top of Home) and the real
@@ -307,11 +380,17 @@ object StreamCache {
     private val inflight = ConcurrentHashMap<String, FutureTask<StreamInfo>>()
 
     fun getOrLoad(id: String): StreamInfo {
-        get(id)?.let { return it }
+        entries[id]?.takeIf { it.fresh && !it.refused }?.let { return it.info }
         val mine = FutureTask {
+            val startedAt = SystemClock.elapsedRealtime()
             StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id)).also {
+                val picked = StreamSelection.pick(it)
+                // Details came, but the stream request was refused: a bot check, not a dead
+                // video (or one with only ANDROID's 360p combined stream), so nothing is
+                // cached and the load can be retried.
+                if (!picked.usesSeparate && BotCheck.refusedSince(id, startedAt)) throw StreamsRefused(id, it)
                 entries[id] = Entry(it, System.currentTimeMillis())
-                Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
+                Net.noteMediaHost((picked.video ?: picked.muxed)?.content)
             }
         }
         val running = inflight.putIfAbsent(id, mine)
@@ -331,6 +410,77 @@ object StreamCache {
     fun prefetch(id: String) {
         if (get(id) != null || inflight.containsKey(id)) return
         prefetcher.execute { runCatching { getOrLoad(id) } }
+    }
+}
+
+/**
+ * The extractor's VISIONOS request (every stream link) was refused, but ANDROID's details
+ * came; [info] may still hold ANDROID's 360p combined stream, which played silently in place
+ * of the real streams before (2026-10-27).
+ */
+class StreamsRefused(id: String, val info: StreamInfo) : SignInConfirmNotBotException("VISIONOS was refused for $id")
+
+/**
+ * "Sign in to confirm you're not a bot" (see [PlayerFallback]) comes and goes: on 2026-10-27
+ * the same client refused and then served the same videos minutes apart. A load it refuses
+ * is retried quietly a few times, the player keeping its spinner with a note ([waiting]),
+ * before giving up: then a 360p combined stream, if the refused load had one, plays rather
+ * than nothing; else the error stands. Prefetches don't retry; only loads someone waits for.
+ */
+object BotCheck {
+    private val RetryDelaysMs = longArrayOf(3_000, 8_000, 20_000)
+
+    /** The video whose load is waiting out a bot check, for the player's note. */
+    var waiting by mutableStateOf<String?>(null)
+        private set
+
+    private val refusedAt = ConcurrentHashMap<String, Long>()
+
+    /** A stream request for [id] was refused ([PlayerFallback] sees every one). */
+    fun noteRefused(id: String) { refusedAt[id] = SystemClock.elapsedRealtime() }
+
+    fun refusedSince(id: String, since: Long) = (refusedAt[id] ?: Long.MIN_VALUE) >= since
+
+    /** [load] for [id], retried while YouTube answers with the bot check. */
+    suspend fun retrying(id: String, load: () -> StreamInfo): StreamInfo {
+        try {
+            for ((attempt, wait) in RetryDelaysMs.withIndex()) {
+                try {
+                    return load()
+                } catch (e: SignInConfirmNotBotException) {
+                    Log.w("Skipii", "bot check for $id; trying again in ${wait / 1000}s (${attempt + 1}/${RetryDelaysMs.size})")
+                    waiting = id
+                    delay(wait)
+                }
+            }
+            return load().also { Log.i("Skipii", "bot check for $id passed on the last try") }
+        } catch (e: SignInConfirmNotBotException) {
+            return giveUp(id, e)
+        } finally {
+            if (waiting == id) waiting = null
+        }
+    }
+
+    /** [retrying] for a thread that can block (the playback service's resolver). */
+    fun retryingBlocking(id: String, load: () -> StreamInfo): StreamInfo = runBlocking { retrying(id, load) }
+
+    /**
+     * [load] with no waiting, for items nobody is watching yet (a restored session, the
+     * queue): a restored item that resolved after its retries became the current video,
+     * replacing the one just opened meanwhile.
+     */
+    fun withoutWaiting(id: String, load: () -> StreamInfo): StreamInfo =
+        try { load() } catch (e: SignInConfirmNotBotException) { giveUp(id, e) }
+
+    private fun giveUp(id: String, e: SignInConfirmNotBotException): StreamInfo {
+        val partial = (e as? StreamsRefused)?.info
+        if (partial != null && StreamSelection.pick(partial).isPlayable) {
+            Log.w("Skipii", "bot check for $id; giving up on the real streams, playing the 360p combined one")
+            StreamCache.keepRefused(id, partial)
+            return partial
+        }
+        Log.w("Skipii", "bot check for $id; giving up")
+        throw e
     }
 }
 

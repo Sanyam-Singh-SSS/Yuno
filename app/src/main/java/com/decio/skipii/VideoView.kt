@@ -10,15 +10,14 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,6 +62,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -92,7 +92,9 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -112,9 +114,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * The video with its overlay controls — shared by the portrait player and fullscreen.
- * Tap toggles the controls; they auto-hide while playing. [controlsAlpha] lets the morph
- * hold them back until the video has landed.
+ * The video — shared by the portrait player and fullscreen. In fullscreen a tap toggles the
+ * overlay controls; they auto-hide while playing. In portrait (0.5.34) the video has no
+ * controls of its own: they all live in the player's bar (PlayerBar.kt); double-tap seek, the
+ * loading spinner, the SponsorBlock Ask pill / skipped note and errors stay on the video.
+ * [controlsAlpha] lets the morph hold them back until the video has landed.
  */
 @Composable
 fun VideoContent(
@@ -165,6 +169,11 @@ fun VideoContent(
     LaunchedEffect(burstTaps) {
         if (burstTaps > 0 && !reduced) nudge.animateTo(0f, keyframes { durationMillis = 440; 1f at 130 })
     }
+    val peekAlpha by animateFloatAsState(
+        targetValue = if (burstActive) 1f else 0f,
+        animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
+        label = "seekPeek",
+    )
     LaunchedEffect(interactive) {
         if (!interactive) {
             controlsVisible = false
@@ -175,7 +184,7 @@ fun VideoContent(
     }
     val currentInteractive by androidx.compose.runtime.rememberUpdatedState(interactive)
     val currentInactiveTap by androidx.compose.runtime.rememberUpdatedState(onInactiveTap)
-    fun toggleControls() { controlsVisible = !controlsVisible; touched() }
+    fun toggleControls() { if (fullscreen) { controlsVisible = !controlsVisible; touched() } }
     fun seekStep(side: Int) {
         val moved = state.seekBy(side * SeekStepMs)
         burstSeconds += ((abs(moved) + 500) / 1000).toInt()
@@ -274,7 +283,7 @@ fun VideoContent(
                     Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
                     radius = 0,
                 )
-                LocalVideoSurface.current(Modifier.fillMaxSize())
+                LocalVideoSurface.current(Modifier.fillMaxSize().hideStaleVideo(state))
                 if (scrubbing && scrubPreviewMs != null) {
                     ScrubVideoPreview(
                         state.current?.id,
@@ -282,6 +291,12 @@ fun VideoContent(
                         Modifier.fillMaxSize(),
                     )
                 }
+            }
+            // Where the burst has got to, while the controls (and their scrubber) are hidden.
+            Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).graphicsLayer { alpha = peekAlpha }) {
+                drawRect(Color.White.copy(alpha = 0.28f))
+                val played = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+                drawRect(Color.White, size = Size(size.width * played, size.height))
             }
         }
         if (!scrubbing) {
@@ -299,8 +314,24 @@ fun VideoContent(
 
         val enabled = controlsVisible && interactive
         // With the controls hidden, loading still shows: a small spinner in the middle.
-        if (!scrubbing && !controlsVisible && (state.isBuffering || (state.loading && state.details == null))) {
+        if (!scrubbing && !controlsVisible && (state.isBuffering || state.hidesStaleVideo || (state.loading && state.details == null))) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(36.dp))
+        }
+        // Waiting out a bot check (BotCheck): the spinner says why this is taking a while.
+        val botWait by animateFloatAsState(
+            if (!controlsVisible && BotCheck.waiting != null && BotCheck.waiting == state.current?.id) 1f else 0f,
+            label = "botWait",
+        )
+        if (botWait > 0f) {
+            Text(
+                "YouTube is checking this connection. Trying again…",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.6f), blurRadius = 8f)),
+                modifier = Modifier.align(Alignment.Center).padding(top = 76.dp, start = 32.dp, end = 32.dp).graphicsLayer { alpha = botWait },
+            )
         }
         if (!scrubbing) {
             SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = controlsAlpha() })
@@ -313,8 +344,9 @@ fun VideoContent(
                 }
             }
         }
+        // Portrait chrome lives on the player bar; fullscreen still draws its overlay here.
         val chromeAlpha = if (scrubbing) 0f else visibleAlpha * controlsAlpha()
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
+        if (fullscreen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
@@ -518,10 +550,17 @@ fun VideoContent(
 }
 
 /**
- * The stage in audio only (Derek, 2026-10-13): no picture, just bigger playback controls
- * (78 dp play, 58 dp skips) and a thicker scrubber, always shown, on a tonal container. The
- * thumbnail sits underneath at the stage's centred 16:9 window and shows through as it
- * shrinks, so it lands as the mini-player, which shows the thumbnail in audio only.
+ * The stage in audio only (Derek, 2026-10-13): no picture, just the playback controls, always
+ * shown, on a tonal container the video's own shape. Every control sits exactly where the
+ * video's overlay puts it (Derek, 2026-10-14): skips and play centred at the same sizes, the
+ * times row and scrubber along the bottom, the skipped note at the top; only the look changes
+ * (tonal buttons, primary play, thicker scrubber). The thumbnail sits underneath at the
+ * stage's centred 16:9 window and shows through as it shrinks, so it lands as the mini-player,
+ * which shows the thumbnail in audio only.
+ *
+ * Switching from or to video happens in place: [cover] fades the whole stage over the picture,
+ * and [gather] brings the controls together (skips slide out from behind the play button,
+ * the bottom row rises in), with a soft overshoot.
  */
 @Composable
 fun AudioOnlyStage(
@@ -531,13 +570,19 @@ fun AudioOnlyStage(
     progress: () -> Float,
     controlsAlpha: () -> Float,
     modifier: Modifier = Modifier,
+    cover: () -> Float = { 1f },
+    gather: () -> Float = { 1f },
 ) {
     val c = MaterialTheme.colorScheme
     val currentInteractive by androidx.compose.runtime.rememberUpdatedState(interactive)
     val currentInactiveTap by androidx.compose.runtime.rememberUpdatedState(onInactiveTap)
     // While collapsing the controls are off (their taps fall through): a tap re-expands.
-    Box(modifier.pointerInput(Unit) { detectTapGestures { if (!currentInteractive) currentInactiveTap() } }) {
-        Box(Modifier.align(Alignment.Center).fillMaxHeight().aspectRatio(16f / 9f)) {
+    Box(
+        modifier
+            .graphicsLayer { alpha = cover().coerceIn(0f, 1f) }
+            .pointerInput(Unit) { detectTapGestures { if (!currentInteractive) currentInactiveTap() } },
+    ) {
+        Box(Modifier.fillMaxSize().aspectFit(16f / 9f)) {
             Thumbnail(state.current?.thumbnail, Modifier.fillMaxSize(), radius = 0)
         }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = ramp(progress(), 0.25f, 0.85f) }.background(c.surfaceContainer))
@@ -546,55 +591,66 @@ fun AudioOnlyStage(
             ErrorPanel(error, onRetry = state::retry, onCollapse = {})
             return@Box
         }
-        Column(
-            Modifier.fillMaxSize().graphicsLayer { alpha = controlsAlpha() }.padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsAlpha() * gather().coerceIn(0f, 1f) }) {
+            SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
+            // Same row as the video's: 48 dp skips, 66 dp play, 30 dp apart.
+            val gap = 30.dp
+            val skip = 48.dp
+            val play = 66.dp
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
+                modifier = Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TonalSkip(Icons.Rounded.Replay10, "Back 10 seconds", interactive) { state.seekBy(-10_000) }
-                MorphPlayButton(
-                    playing = state.isPlaying,
-                    buffering = state.isBuffering || (state.loading && state.details == null),
-                    size = 78.dp,
-                    container = c.primary,
-                    content = c.onPrimary,
-                    enabled = interactive,
-                ) { state.togglePlay() }
-                TonalSkip(Icons.Rounded.Forward10, "Forward 10 seconds", interactive) { state.seekBy(10_000) }
-            }
-            Spacer(Modifier.height(8.dp))
-            var scrubPreview by remember { mutableStateOf<Long?>(null) }
-            Scrubber(
-                segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
-                positionMs = state.positionMs,
-                bufferedMs = state.bufferedMs,
-                durationMs = state.durationMs,
-                enabled = interactive,
-                onPreview = { scrubPreview = it },
-                onSeek = { scrubPreview = null; state.seekTo(it) },
-                track = c.surfaceContainerHighest,
-                buffered = c.primary.copy(alpha = 0.3f),
-                played = c.primary,
-                trackHeight = 6.dp,
-                knob = 8.dp,
-                knobDragging = 10.dp,
-            )
-            Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
-                val time = Modifier.width(56.dp)
-                Text(formatDuration(scrubPreview ?: state.positionMs), color = c.onSurfaceVariant, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, modifier = time)
-                // SponsorBlock's Ask pill, or the note after an automatic skip, between the times.
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    val ask = state.askSegment
-                    if (ask != null) SkipSegmentPill(ask, enabled = interactive) { state.skipSegment(ask) }
-                    else SkippedNote(state, Modifier)
+                // Each skip starts tucked behind the play button and slides out to its place.
+                fun Modifier.slide(side: Int) = graphicsLayer {
+                    translationX = -side * (1f - gather()) * (gap + (play + skip) / 2).toPx()
                 }
-                Text(
-                    formatDuration(state.durationMs), color = c.onSurfaceVariant, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = time,
+                Box(Modifier.slide(-1)) { TonalSkip(Icons.Rounded.Replay10, "Back 10 seconds", interactive, skip) { state.seekBy(-10_000) } }
+                Box(Modifier.graphicsLayer { val k = lerpF(0.6f, 1f, gather()); scaleX = k; scaleY = k }) {
+                    MorphPlayButton(
+                        playing = state.isPlaying,
+                        buffering = state.isBuffering || (state.loading && state.details == null),
+                        size = play,
+                        container = c.primary,
+                        content = c.onPrimary,
+                        enabled = interactive,
+                    ) { state.togglePlay() }
+                }
+                Box(Modifier.slide(1)) { TonalSkip(Icons.Rounded.Forward10, "Forward 10 seconds", interactive, skip) { state.seekBy(10_000) } }
+            }
+            // Same place and padding as the video's bottom bar (its row is the fullscreen button's 34 dp).
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 14.dp, end = 8.dp, bottom = 6.dp)
+                    .graphicsLayer { translationY = (1f - gather()) * 16.dp.toPx() },
+            ) {
+                var scrubPreview by remember { mutableStateOf<Long?>(null) }
+                Row(Modifier.height(34.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(formatDuration(scrubPreview ?: state.positionMs), color = c.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        " / " + formatDuration(state.durationMs),
+                        color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    state.askSegment?.let { ask -> SkipSegmentPill(ask, enabled = interactive) { state.skipSegment(ask) } }
+                }
+                Scrubber(
+                    segments = if (SponsorBlock.enabled) state.segments.filter { it.action != SponsorBlock.Action.Off } else emptyList(),
+                    positionMs = state.positionMs,
+                    bufferedMs = state.bufferedMs,
+                    durationMs = state.durationMs,
+                    enabled = interactive,
+                    onPreview = { scrubPreview = it },
+                    onSeek = { scrubPreview = null; state.seekTo(it) },
+                    track = c.surfaceContainerHighest,
+                    buffered = c.primary.copy(alpha = 0.3f),
+                    played = c.primary,
+                    trackHeight = 6.dp,
+                    knob = 8.dp,
+                    knobDragging = 10.dp,
                 )
             }
         }
@@ -602,12 +658,28 @@ fun AudioOnlyStage(
 }
 
 @Composable
-private fun TonalSkip(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+private fun TonalSkip(icon: ImageVector, description: String, enabled: Boolean, size: Dp, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Box(
-        Modifier.size(58.dp).pressable(enabled = enabled, onClick = onClick).clip(CircleShape).background(c.surfaceContainerHigh),
+        Modifier.size(size).pressable(enabled = enabled, onClick = onClick).clip(CircleShape).background(c.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, description, tint = c.onSurface, modifier = Modifier.size(34.dp)) }
+    ) { Icon(icon, description, tint = c.onSurface, modifier = Modifier.size(size * 0.62f)) }
+}
+
+/**
+ * Hides the picture while the shared surface still holds the frame from before audio only
+ * after video is turned back on ([PlayerState.hidesStaleVideo]); the thumbnail underneath shows
+ * instead, and the fresh frame fades in.
+ */
+@Composable
+fun Modifier.hideStaleVideo(state: PlayerState): Modifier {
+    val hide = state.hidesStaleVideo
+    val alpha by animateFloatAsState(
+        targetValue = if (hide) 0f else 1f,
+        animationSpec = if (hide || rememberReducedMotion()) tween(0) else tween(220, easing = Motion.Emphasized),
+        label = "freshVideo",
+    )
+    return graphicsLayer { this.alpha = alpha }
 }
 
 /**
@@ -628,33 +700,31 @@ fun Modifier.aspectFit(aspect: Float, cover: Boolean = false) = layout { measura
 }
 
 /**
- * Landscape fullscreen. Swipe down (or Back, or the exit button) returns to portrait.
+ * Fullscreen (landscape, or upright for a vertical video). Swipe down (or Back, or the exit button) returns to portrait.
  * System bars are hidden by the caller while this is shown.
  */
 @Composable
 fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit) {
     val reduced = rememberReducedMotion()
     var drag by remember { mutableStateOf(0f) }
-    VideoContent(
-        state = state,
-        fullscreen = true,
-        onCollapse = onExit,
-        onToggleFullscreen = onExit,
-        modifier = Modifier
-            .fillMaxSize()
-            .draggable(
-                state = rememberDraggableState { delta -> drag = (drag + delta).coerceAtLeast(0f) },
-                orientation = Orientation.Vertical,
-                onDragStopped = { velocity ->
-                    if (drag > 120f || velocity > 1400f) onExit()
-                    drag = 0f
+    // Up/down on the left = brightness, on the right = volume; the middle swipes down to exit.
+    val sliders = rememberFullscreenSliders()
+    Box(Modifier.fillMaxSize()) {
+        VideoContent(
+            state = state,
+            fullscreen = true,
+            onCollapse = onExit,
+            onToggleFullscreen = onExit,
+            modifier = Modifier
+                .fillMaxSize()
+                .fullscreenGestures(sliders, onPull = { drag = it }, onSwipeDown = onExit)
+                .graphicsLayer {
+                    // A little give while dragging, so the gesture is visibly being heard.
+                    translationY = if (reduced) 0f else drag * 0.35f
                 },
-            )
-            .graphicsLayer {
-                // A little give while dragging, so the gesture is visibly being heard.
-                translationY = if (reduced) 0f else drag * 0.35f
-            },
-    )
+        )
+        SliderLevel(sliders)
+    }
 }
 
 @Composable
@@ -728,6 +798,8 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.surfaceContainerLow,
     ) {
+        // Scrolls: in fullscreen (landscape) only the first few rows fit (GitHub issue #1).
+        Column(Modifier.verticalScroll(rememberScrollState())) {
         Text(
             "Quality",
             fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
@@ -747,6 +819,7 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
             QualityRow("${h}p", qualityTag(h), chosen == h) { state.setQuality(h); onDismiss() }
         }
         Spacer(Modifier.height(28.dp))
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 package com.decio.skipii
 
+import android.util.Log
+
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -102,6 +104,9 @@ import kotlinx.coroutines.launch
 /** Comments for the open video: first page, paging, per-comment replies, likes and posting. */
 @Stable
 class CommentsState(private val scope: CoroutineScope) {
+    /** The watch page the first comments come from also carries the video's chapters. */
+    var onChapters: ((videoId: String, chapters: List<Chapter>) -> Unit)? = null
+
     private var videoId: String? = null
     var comments by mutableStateOf<List<Comment>>(emptyList())
         private set
@@ -159,15 +164,18 @@ class CommentsState(private val scope: CoroutineScope) {
         liked.clear()
         loading = true
         job?.cancel()
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         job = scope.launch {
             runCatching { CommentFeed.first(id) }
                 .onSuccess { page ->
+                    Log.i("Skipii", "comments for $id in ${android.os.SystemClock.elapsedRealtime() - startedAt} ms")
                     if (videoId != id) return@onSuccess
                     comments = page.comments
                     total = page.total
                     disabled = page.disabled
                     next = page.next
                     arrived(page.comments)
+                    if (page.chapters.isNotEmpty()) onChapters?.invoke(id, page.chapters)
                 }
                 .onFailure { if (videoId == id) error = YouTube.friendlyError(it) }
             loading = false
@@ -507,7 +515,7 @@ private fun Composer(state: CommentsState) {
                 BasicTextField(
                     value = state.draft,
                     onValueChange = { state.draft = it },
-                    textStyle = TextStyle(color = c.onSurface, fontSize = 15.sp),
+                    textStyle = OwnDirectionText.merge(TextStyle(color = c.onSurface, fontSize = 15.sp)),
                     cursorBrush = SolidColor(c.primary),
                     maxLines = 5,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send, capitalization = KeyboardCapitalization.Sentences),

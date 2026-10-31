@@ -45,6 +45,8 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
@@ -53,7 +55,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +66,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -72,8 +77,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.exp
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -91,6 +98,10 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 
 // The video runs edge to edge as a plain rectangle, right under the status bar (Derek).
 internal val StageTopGap = 0.dp
+/** How far up the screen (share of its height) the video's top edge gets before the status bar starts turning black. */
+private const val StatusBlackFromUp = 0.25f
+/** Morph progress by which the status bar over the video is fully black. */
+private const val StatusBlackEnd = 0.9f
 internal val StageSideGap = 0.dp
 internal val StageRadius = 0.dp
 internal val MiniHeight = 70.dp
@@ -105,10 +116,13 @@ internal val MiniThumbRadius = 17.dp
  */
 internal const val StageMinAspect = 0.8f
 internal const val StageMaxAspect = 2.4f
-/** Wider than this: stage stays 16:9 and the picture letterboxes top/bottom. */
-internal const val StageFrameAspect = 16f / 9f
-/** Audio only: the stage is a short strip holding just the controls (~164 dp on a Pixel). */
-internal const val AudioStageAspect = 2.5f
+/**
+ * The stage never takes more than this share of the window's height: in a short split-screen
+ * pane a tall video would otherwise push the details (and half the video) off the bottom.
+ * On a full phone screen 4:5 stays under it, so nothing changes there.
+ */
+internal const val StageMaxHeightShare = 0.6f
+
 /** Morph progress after which the details and tint start fading in (tuning dial). */
 private const val DetailsFadeStart = 0.55f
 
@@ -121,17 +135,44 @@ fun PlayerScreen(
     onOpen: (VideoItem) -> Unit,
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
+    /** Room the floating player bar (the nav pill over the player) takes at the bottom. */
+    bottomClearance: androidx.compose.ui.unit.Dp,
 ) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
     // Collapsing (or collapsed): the player gives up the screen immediately, so the
     // mini-player underneath answers taps and swipes even while the animation finishes.
     val interactive = state.expanded || morph.dragging
+    // A drag on the video or details whose page goes away mid-gesture (turning to fullscreen)
+    // never gets its release: settle it here, or the morph stays "dragging" for good.
+    DisposableEffect(morph) { onDispose { morph.settle(0f, reducedMotion = false) } }
     val showDetails by remember { derivedStateOf { state.expanded || morph.dragging || morph.progress.value > DetailsFadeStart } }
     val details = state.details
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var descriptionOpen by remember(item.id) { mutableStateOf(false) }
+    // Audio only (Derek, 2026-10-25): the open player has no video space at all — the stage
+    // folds away (the picture fading and lifting as its height closes) and unfolds for video.
+    // Only on the fully open player: swiping it down unfolds it again, so the thumbnail still
+    // lands in the mini-player.
+    val reduced = rememberReducedMotion()
+    val fold = remember { Animatable(if (AudioOnly.enabled) 1f else 0f) }
+    LaunchedEffect(AudioOnly.enabled) {
+        val target = if (AudioOnly.enabled) 1f else 0f
+        if (reduced) fold.snapTo(target) else fold.animateTo(target, spring(dampingRatio = 1f, stiffness = 260f, visibilityThreshold = 0.0005f))
+    }
+    // Derek, 2026-10-26: over a video the status bar is pitch black (white icons); audio only
+    // and the pages keep the page look. It fades from the page's own color once the video's top
+    // edge is a quarter of the way up the screen (black before the growing frame reaches the
+    // top), and out with the fold.
+    val blackStatus = {
+        val g = morph.geometry
+        // The video's top edge travels from the mini-player's thumbnail to the stage's top.
+        val start = if (g == null) StatusBlackFromUp else ((g.miniThumb.top - g.screen.height * (1f - StatusBlackFromUp)) / (g.miniThumb.top - g.stage.top))
+        ramp(morph.progress.value, start.coerceIn(0f, StatusBlackEnd - 0.1f), StatusBlackEnd) * (1f - fold.value)
+    }
+    LaunchedEffect(Unit) { snapshotFlow { blackStatus() > 0.5f }.collect { StatusBarOverVideo.on = it } }
+    DisposableEffect(Unit) { onDispose { StatusBarOverVideo.on = false } }
 
     val pageColor = c.surface
     val miniColor = c.surfaceContainerHighest
@@ -168,14 +209,15 @@ fun PlayerScreen(
                 .graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) }
                 .background(Brush.verticalGradient(listOf(c.primaryContainer.copy(alpha = 0.75f), c.surface))),
         )
-        ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottom + 24.dp))
+        ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottomClearance + 8.dp))
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(top + StageTopGap))
             // Pinned: the video stays put while the details scroll beneath it. Sit above the
             // details list so the bottom scrubber/thumb aren't covered at the seam.
             Box(Modifier.zIndex(2f)) {
-                VideoStage(state, morph, onCollapse, onFullscreen, interactive)
+                VideoStage(state, morph, fold, onCollapse, onFullscreen, interactive)
             }
+
             // While collapsing the details are invisible anyway; leaving them out keeps them
             // from catching touches meant for the mini-player.
             if (!showDetails) Spacer(Modifier.weight(1f)) else
@@ -196,7 +238,7 @@ fun PlayerScreen(
                             0f
                         }
                     },
-                contentPadding = PaddingValues(bottom = bottom + 32.dp),
+                contentPadding = PaddingValues(bottom = bottomClearance + 16.dp),
             ) {
                 item(key = "info") {
                     Column(Modifier.padding(horizontal = 20.dp)) {
@@ -214,7 +256,7 @@ fun PlayerScreen(
                             item.views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
                             item.uploaded?.ifBlank { null },
                             details?.likes?.takeIf { it > 0 }?.let { "${formatCount(it)} likes" },
-                        ).joinToString(" · ")
+                        ).joinDots()
                         val hasDescription = !details?.description.isNullOrBlank()
                         Row(
                             modifier = if (hasDescription) Modifier.pressable(pressedScale = 0.98f) { descriptionOpen = !descriptionOpen } else Modifier,
@@ -261,8 +303,8 @@ fun PlayerScreen(
                                 SubscribeButton(subscribed, onClick = state::toggleSubscribe)
                             }
                         }
+                        // Speed and audio only live in the player's bar now (PlayerBar.kt).
                         PlayerActions(state)
-                        SpeedPanel(state)
                         QueueCard(state, onOpen = { state.sheet = PlayerSheet.Queue })
                         CommentsCard(state.comments, onOpen = { state.sheet = PlayerSheet.Comments })
                     }
@@ -282,6 +324,17 @@ fun PlayerScreen(
                 }
             }
         }
+        // The page's bottom vignette, as on the tabs: the details dissolve behind the player
+        // bar instead of running hard into it. Drawn only, never touchable.
+        val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(bottom + 130.dp)
+                .graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) }
+                .drawBehind { drawRect(vignette) },
+        )
         // Swiping home from the bottom edge never scrolls the details (open player only: while
         // collapsing, touches must still fall through to the mini-player).
         if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
@@ -303,6 +356,13 @@ fun PlayerScreen(
             )
         }
     }
+    // Outside the morph's frame, so it never slides in with the card: it just fades over
+    // whatever the status bar shows.
+    Box(
+        Modifier.fillMaxWidth().height(top)
+            .graphicsLayer { alpha = blackStatus() }
+            .background(Color.Black),
+    )
 }
 
 /**
@@ -312,7 +372,7 @@ fun PlayerScreen(
  * [FullscreenPull] or with a flick it turns to landscape; short of that it eases back.
  */
 @Composable
-private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () -> Unit, onFullscreen: () -> Unit, interactive: Boolean) {
+private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<Float, *>, onCollapse: () -> Unit, onFullscreen: () -> Unit, interactive: Boolean) {
     val reduced = rememberReducedMotion()
     val scope = rememberCoroutineScope()
     // The height follows the video; when its real shape arrives the change eases in.
@@ -327,7 +387,19 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
     // anything else drives the morph.
     var decided by remember { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
+    val folded = { fold.value * ramp(morph.progress.value, 0.8f) }
     val stage = Modifier
+        .graphicsLayer { clip = folded() > 0.001f }
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val k = 1f - folded()
+            layout(placeable.width, (placeable.height * k).roundToInt()) {
+                placeable.placeWithLayer(0, 0) {
+                    alpha = ramp(k, 0.1f, 0.85f)
+                    translationY = -placeable.height * 0.3f * (1f - k)
+                }
+            }
+        }
         .padding(horizontal = StageSideGap)
         .fillMaxWidth()
         .aspectRatio(aspect)
@@ -388,30 +460,59 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
         )
     // Controls appear only once the video has nearly landed, so they never ride the morph.
     val controlsAlpha = { ramp(morph.progress.value, 0.7f) }
-    if (AudioOnly.enabled) {
-        AudioOnlyStage(
-            state = state,
-            interactive = interactive,
-            onInactiveTap = { state.expanded = true },
-            progress = { morph.progress.value },
-            controlsAlpha = controlsAlpha,
-            modifier = stage,
-        )
-    } else {
-        VideoContent(
-            state = state,
-            fullscreen = false,
-            interactive = interactive,
-            // A tap on the shrinking video brings the player straight back.
-            onInactiveTap = { state.expanded = true },
-            onCollapse = onCollapse,
-            onToggleFullscreen = onFullscreen,
-            controlsAlpha = controlsAlpha,
-            portraitEdgeScrub = true,
-            modifier = stage,
-        )
+    // Audio only ↔ video in place (Derek, 2026-10-14): [cover] is how much of the audio stage
+    // lies over the video, [gather] its controls coming together.
+    val audio = AudioOnly.enabled
+    val cover = remember { Animatable(if (audio) 1f else 0f) }
+    val gather = remember { Animatable(if (audio) 1f else 0f) }
+    LaunchedEffect(audio) {
+        if (reduced) { cover.snapTo(if (audio) 1f else 0f); gather.snapTo(if (audio) 1f else 0f); return@LaunchedEffect }
+        if (audio) {
+            launch { cover.animateTo(1f, tween(AudioSwitchMs, easing = Motion.Emphasized)) }
+            delay(AudioSwitchMs / 3L)
+            gather.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f))
+        } else {
+            // Straight away (Derek: waiting for the video felt like the tap hadn't registered).
+            // Underneath, the video shows its thumbnail and a spinner until a fresh frame
+            // arrives ([PlayerState.videoStale]).
+            launch { gather.animateTo(0f, tween(AudioSwitchMs / 2, easing = Motion.Emphasized)) }
+            cover.animateTo(0f, tween(AudioSwitchMs, easing = Motion.Emphasized))
+        }
+    }
+    val showVideo by remember { derivedStateOf { !AudioOnly.enabled || cover.value < 1f } }
+    val showAudio by remember { derivedStateOf { AudioOnly.enabled || cover.value > 0f } }
+    Box(stage) {
+        if (showVideo) {
+            VideoContent(
+                state = state,
+                fullscreen = false,
+                interactive = interactive,
+                // A tap on the shrinking video brings the player straight back.
+                onInactiveTap = { state.expanded = true },
+                onCollapse = onCollapse,
+                onToggleFullscreen = onFullscreen,
+                controlsAlpha = controlsAlpha,
+                portraitEdgeScrub = true,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (showAudio) {
+            AudioOnlyStage(
+                state = state,
+                interactive = interactive && audio,
+                onInactiveTap = { state.expanded = true },
+                progress = { morph.progress.value },
+                controlsAlpha = controlsAlpha,
+                cover = { cover.value },
+                gather = { gather.value },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
+
+/** Audio only ↔ video: how long the audio stage takes to cover (or uncover) the picture. */
+private const val AudioSwitchMs = 360
 
 /** How far a swipe up on the open video travels before it goes fullscreen on release. */
 private val FullscreenPull = 64.dp
@@ -449,8 +550,8 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The action row: like | dislike and Save when signed in, then speed and audio only (always).
- * It runs edge to edge inside so a long like count scrolls it sideways instead of squeezing
+ * The action row: like | dislike, Save and Playlist (signed in), then Share (GitHub issue #19; signed out
+ * it's the whole row). It runs edge to edge inside so a long like count scrolls it sideways instead of squeezing
  * the buttons, and the like sparks still have room to fly.
  */
 @Composable
@@ -465,8 +566,16 @@ private fun PlayerActions(state: PlayerState) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (state.accountState != null) AccountActions(state)
-        SpeedButton(state)
-        AudioOnlyButton(state)
+        val context = LocalContext.current
+        val item = state.current
+        ActionPill(
+            icon = Icons.Rounded.Share,
+            label = "Share",
+            active = false,
+            flourish = null,
+            shape = RoundedCornerShape(22.dp),
+            description = "Share",
+        ) { item?.let { shareLink(context, "https://youtu.be/${it.id}", it.title) } }
     }
 }
 
@@ -479,7 +588,7 @@ private fun Modifier.bleed(x: androidx.compose.ui.unit.Dp) = layout { measurable
     layout(placeable.width - extra, placeable.height) { placeable.place(-extra / 2, 0) }
 }
 
-/** Connected like | dislike group and Save (Watch later), all synced to the account; placed in [PlayerActions]' row. */
+/** Connected like | dislike group, Save (Watch later) and Playlist, all synced to the account; placed in [PlayerActions]' row. */
 @Composable
 private fun AccountActions(state: PlayerState) {
     val like = state.accountState?.like ?: LikeStatus.None
@@ -514,6 +623,15 @@ private fun AccountActions(state: PlayerState) {
         shape = RoundedCornerShape(22.dp),
         description = "Save to Watch later",
     ) { state.toggleWatchLater() }
+    // Any of the account's playlists (GitHub issue #12).
+    ActionPill(
+        icon = Icons.Rounded.LibraryAdd,
+        label = "Playlist",
+        active = false,
+        flourish = null,
+        shape = RoundedCornerShape(22.dp),
+        description = "Save to playlist",
+    ) { state.current?.let(state::openPlaylists) }
 }
 
 @Composable
@@ -521,7 +639,8 @@ private fun ActionPill(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String?,
     active: Boolean,
-    flourish: Flourish,
+    /** Null: a plain icon (an action with no on/off state). */
+    flourish: Flourish?,
     shape: androidx.compose.ui.graphics.Shape,
     description: String,
     labelRollsUp: Boolean = true,
@@ -541,7 +660,8 @@ private fun ActionPill(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FlourishIcon(icon, description, active = active, kind = flourish, tint = tint, size = 20.dp, sparkColor = c.primary)
+        if (flourish == null) Icon(icon, description, tint = tint, modifier = Modifier.size(20.dp))
+        else FlourishIcon(icon, description, active = active, kind = flourish, tint = tint, size = 20.dp, sparkColor = c.primary)
         if (label != null) {
             Spacer(Modifier.width(7.dp))
             RollingText(label, tint, up = labelRollsUp)
@@ -595,7 +715,7 @@ fun MiniPlayer(state: PlayerState, onExpand: () -> Unit, modifier: Modifier = Mo
                     // Audio only: there is no picture, the thumbnail stands in.
                     if (!AudioOnly.enabled) {
                         Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
-                            LocalVideoSurface.current(Modifier.fillMaxSize().aspectFit(state.videoAspect))
+                            LocalVideoSurface.current(Modifier.fillMaxSize().aspectFit(state.videoAspect).hideStaleVideo(state))
                         }
                     }
                 }

@@ -13,7 +13,10 @@ import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -61,6 +64,7 @@ import androidx.compose.ui.input.key.type
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -92,7 +96,7 @@ fun HomeScreen(
     LaunchedEffect(signedIn) { if (signedIn) lib.home.ensureLoaded() }
     CollapsingHeaderLayout(
         resetKey = scrollToTop to lib.home.generation,
-        header = { ScreenHeader(title = "Skipii", brandMark = true) { HeaderActions(onSearch, onAccount) } },
+        header = { ScreenHeader(title = "Skipii", brandMark = true) { UpdateAction(); HeaderActions(onSearch, onAccount) } },
     ) { top ->
         if (signedIn) {
             FeedList(lib.home, contentPadding.withTop(top), onOpen, scrollToTop = scrollToTop, indicatorTop = top)
@@ -530,6 +534,7 @@ class SearchState(private val scope: CoroutineScope) {
         suggestJob?.cancel()
         suggestions = emptyList()
         suggestionsLoading = false
+        SearchHistory.add(q)
         submitted = q
         loading = true
         error = null
@@ -543,6 +548,7 @@ class SearchState(private val scope: CoroutineScope) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     state: SearchState,
@@ -577,10 +583,21 @@ fun SearchScreen(
         }, 120)
         state.submit()
     }
+    var focused by remember { mutableStateOf(false) }
+    // The keyboard closed by Back or its own button leaves the field focused; drop the focus
+    // with it so the history gives way to the results again.
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(imeVisible) { if (!imeVisible && focused) focus.clearFocus() }
+    // Past searches, filtered by what's typed: while typing, and on the empty page.
+    val history = SearchHistory.matching(state.query)
+    val draft = state.query.isNotBlank() &&
+        (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
+    // Suggestions win while drafting; history when focused/empty and not mid-suggestion draft.
+    val showHistory = !draft && history.isNotEmpty() && (focused || state.submitted.isEmpty())
     Box(Modifier.fillMaxSize().background(c.surface).overlayTouchBlock()) {
     // The search bar rides with the header: both slide away together while scrolling results.
     CollapsingHeaderLayout(
-        resetKey = scrollToTop to state.generation,
+        resetKey = Triple(scrollToTop, state.generation, showHistory),
         header = {
             BackScreenHeader(onBack = onBack) {
                 Row(
@@ -607,13 +624,14 @@ fun SearchScreen(
                             value = state.query,
                             onValueChange = state::updateQuery,
                             singleLine = true,
-                            textStyle = TextStyle(color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+                            textStyle = OwnDirectionText.merge(TextStyle(color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)),
                             cursorBrush = SolidColor(c.primary),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { submit() }, onDone = { submit() }),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(searchFocus)
+                                .onFocusChanged { focused = it.isFocused }
                                 .onPreviewKeyEvent { e ->
                                     if (e.key == Key.Enter || e.key == Key.NumPadEnter) {
                                         if (e.type == KeyEventType.KeyDown) submit()
@@ -635,10 +653,9 @@ fun SearchScreen(
             }
         },
     ) { top ->
-        val draft = state.query.isNotBlank() &&
-            (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
+        val listShown = showHistory || draft || (state.results.isNotEmpty() && state.error == null)
         Box(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(top = if (!draft && state.results.isNotEmpty() && state.error == null) 0.dp else top)) {
+        Box(Modifier.padding(top = if (listShown) 0.dp else top)) {
         when {
             draft -> {
                 if (state.suggestionsLoading && state.suggestions.isEmpty()) {
@@ -683,6 +700,11 @@ fun SearchScreen(
                     }
                 }
             }
+            showHistory -> SearchHistoryList(
+                history = history,
+                contentPadding = contentPadding.withTop(top),
+                onSearch = { state.updateQuery(it); submit() },
+            )
             state.loading && state.results.isEmpty() -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), Alignment.Center) {
                 CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
             }
@@ -706,14 +728,55 @@ fun SearchScreen(
                 val list = rememberScrollToTop(scrollToTop)
                 LaunchedEffect(state.generation) { list.scrollToItem(0) }
                 LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
-                items(state.results, key = { it.id }) { video ->
-                    VideoCard(video, onClick = { onOpen(video) })
+                    items(state.results, key = { it.id }) { video ->
+                        VideoCard(video, onClick = { onOpen(video) })
+                    }
                 }
-            }
             }
         }
         }
         }
     }
+    }
+}
+
+@Composable
+private fun SearchHistoryList(history: List<String>, contentPadding: PaddingValues, onSearch: (String) -> Unit) {
+    val c = MaterialTheme.colorScheme
+    LazyColumn(contentPadding = contentPadding) {
+        item(key = "header") {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
+            ) {
+                SectionTitle("Recent searches", Modifier.weight(1f).alignByBaseline())
+                Box(Modifier.alignByBaseline()) { TextLink("Clear all") { SearchHistory.clear() } }
+            }
+        }
+        items(history, key = { it }) { query ->
+            Row(
+                modifier = Modifier
+                    .animateItem()
+                    .fillMaxWidth()
+                    .pressable { onSearch(query) }
+                    .height(52.dp)
+                    .padding(start = 24.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.History, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    query,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Box(
+                    modifier = Modifier.size(44.dp).pressable { SearchHistory.remove(query) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Close, "Remove", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+            }
+        }
     }
 }

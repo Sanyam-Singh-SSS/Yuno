@@ -1,6 +1,7 @@
 package com.decio.skipii
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +22,10 @@ data class Profile(val name: String, val handle: String?, val avatar: String?)
 
 @Immutable
 data class PlaylistRef(val id: String, val title: String, val thumbnail: String?, val subtitle: String?)
+
+/** A playlist a video can be saved to, and whether it's in it ([contains] null: not known). */
+@Immutable
+data class PlaylistChoice(val id: String, val title: String, val contains: Boolean?, val privacy: String?)
 
 @Immutable
 data class ChannelRef(val id: String, val name: String, val avatar: String?) {
@@ -352,6 +357,73 @@ object InnerTube {
         subscribed
     }
 
+    // ── Shorts ─────────────────────────────────────────────────────────────────
+
+    /**
+     * One page of the Shorts feed; [token] null for the first. YouTube's Shorts feed is no browse
+     * page but the "reel sequence" that follows one short (reel/reel_watch_sequence, as on
+     * youtube.com/shorts). The first page starts from a seed: signed in, the first short on your
+     * Home (so the sequence is yours); else, or with none there, one from a public "shorts"
+     * search — the sequence then works anonymously (checked 2026-10-28). The seed plays first.
+     */
+    suspend fun shorts(token: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        if (token != null) return@withContext parseShorts(postAny("reel/reel_watch_sequence", JSONObject().put("sequenceParams", token)))
+        val seed = shortsSeed() ?: throw IOException("YouTube didn't offer any Shorts right now.")
+        val page = parseShorts(postAny("reel/reel_watch_sequence", JSONObject().put("sequenceParams", reelSequenceParams(seed))))
+        page.copy(videos = listOf(shortItem(seed, null)) + page.videos.filter { it.id != seed })
+    }
+
+    private fun shortsSeed(): String? {
+        if (Account.signedIn) {
+            runCatching { reelIds(post("browse", JSONObject().put("browseId", "FEwhat_to_watch"))).firstOrNull() }
+                .getOrNull()?.let { return it }
+        }
+        // A different public short each time, so the generic feed doesn't always start the same way.
+        return reelIds(postAny("search", JSONObject().put("query", "shorts"))).take(10).randomOrNull()
+    }
+
+    /** Every short a response links to (Home's Shorts shelf, search results), in order. */
+    private fun reelIds(root: JSONObject): List<String> {
+        val ids = LinkedHashSet<String>()
+        root.walk { key, obj -> if (key == "reelWatchEndpoint") obj.optString("videoId").takeIf { it.length == 11 }?.let(ids::add) }
+        return ids.toList()
+    }
+
+    /**
+     * The sequence's start, as youtube.com encodes it (the ReelSequence protobuf, per YouTube.js):
+     * 1 = the seed's id, 5 = params { 3 = 5 }, 10 = 25. Written by hand; no protobuf library.
+     */
+    internal fun reelSequenceParams(shortId: String): String {
+        val id = shortId.toByteArray()
+        val bytes = byteArrayOf(0x0A, id.size.toByte()) + id + byteArrayOf(0x2A, 0x02, 0x18, 0x05, 0x50, 25)
+        return java.util.Base64.getEncoder().encodeToString(bytes)
+    }
+
+    /**
+     * A reel sequence: each `entries[]` item's command carries a reelWatchEndpoint (the short's
+     * id and its 9:16 first frame); the next page is `continuationEndpoint`'s token. Titles and
+     * channels aren't in it; they come with the streams (YouTube.details).
+     */
+    internal fun parseShorts(root: JSONObject): FeedPage {
+        val videos = LinkedHashMap<String, VideoItem>()
+        val entries = root.optJSONArray("entries")
+        for (i in 0 until (entries?.length() ?: 0)) {
+            val reel = entries?.optJSONObject(i)?.optJSONObject("command")?.optJSONObject("reelWatchEndpoint") ?: continue
+            val id = reel.optString("videoId").takeIf { it.length == 11 } ?: continue
+            val frame = reel.optJSONObject("thumbnail")?.collectStrings("url")?.firstOrNull()
+            videos.putIfAbsent(id, shortItem(id, frame))
+        }
+        val next = root.optJSONObject("continuationEndpoint")?.optJSONObject("continuationCommand")?.optString("token")?.ifBlank { null }
+        return FeedPage(videos.values.toList(), next)
+    }
+
+    /** A short before its details load: just its id and its first frame (9:16). */
+    private fun shortItem(id: String, frame: String?) = VideoItem(
+        id = id, title = "", channel = "", channelUrl = null,
+        thumbnail = frame ?: "https://i.ytimg.com/vi/$id/oar2.jpg",
+        avatar = null, durationSec = 0, views = 0, uploaded = null,
+    )
+
     // ── Writes ─────────────────────────────────────────────────────────────────
 
     suspend fun setLike(videoId: String, status: LikeStatus) = withContext(Dispatchers.IO) {
@@ -372,11 +444,38 @@ object InnerTube {
         Unit
     }
 
-    suspend fun setInWatchLater(videoId: String, add: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setInWatchLater(videoId: String, add: Boolean) = setInPlaylist("WL", videoId, add)
+
+    suspend fun setInPlaylist(playlistId: String, videoId: String, add: Boolean) = withContext(Dispatchers.IO) {
         val action = if (add) JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", videoId)
         else JSONObject().put("action", "ACTION_REMOVE_VIDEO_BY_VIDEO_ID").put("removedVideoId", videoId)
-        post("browse/edit_playlist", JSONObject().put("playlistId", "WL").put("actions", JSONArray().put(action)))
+        post("browse/edit_playlist", JSONObject().put("playlistId", playlistId).put("actions", JSONArray().put(action)))
         Unit
+    }
+
+    /**
+     * The account's playlists for [videoId], Watch later first, each saying whether the video is
+     * in it: what youtube.com's "Save to…" dialog lists (GitHub issue #12). If that answer can't
+     * be read, the Library's playlists stand in, without knowing which hold the video.
+     */
+    suspend fun saveChoices(videoId: String): List<PlaylistChoice> = withContext(Dispatchers.IO) {
+        val answer = post(
+            "playlist/get_add_to_playlist",
+            JSONObject().put("videoIds", JSONArray().put(videoId)).put("excludeWatchLater", false),
+        )
+        parseSaveChoices(answer).ifEmpty {
+            Log.w("Skipii", "playlists: no choices in the Save dialog's answer, using the Library's list")
+            playlists().map { PlaylistChoice(it.id, it.title, contains = null, privacy = null) }
+        }
+    }
+
+    /** A new playlist holding [videoId]; returns its id. [privacy]: PRIVATE, UNLISTED or PUBLIC. */
+    suspend fun createPlaylist(title: String, privacy: String, videoId: String): String = withContext(Dispatchers.IO) {
+        val answer = post(
+            "playlist/create",
+            JSONObject().put("title", title).put("privacyStatus", privacy).put("videoIds", JSONArray().put(videoId)),
+        )
+        answer.optString("playlistId").ifBlank { throw IOException("YouTube didn't create the playlist") }
     }
 
     /** One video being watched: the tracking URL for its watch-time pings. */
@@ -798,4 +897,26 @@ internal fun JSONObject.collectStrings(field: String): List<String> {
     }
     visitObj(this)
     return out
+}
+
+/** The Save dialog's playlists (`playlistAddToOptionRenderer`s, Watch later among them). */
+internal fun parseSaveChoices(answer: JSONObject): List<PlaylistChoice> {
+    val out = LinkedHashMap<String, PlaylistChoice>()
+    answer.walk { key, obj ->
+        if (key != "playlistAddToOptionRenderer") return@walk
+        val id = obj.optString("playlistId").ifBlank { return@walk }
+        out.getOrPut(id) {
+            PlaylistChoice(
+                id = id,
+                title = obj.text("title") ?: "",
+                contains = when (obj.optString("containsSelectedVideos")) {
+                    "ALL" -> true
+                    "NONE" -> false
+                    else -> null
+                },
+                privacy = obj.optString("privacy").ifBlank { null },
+            )
+        }
+    }
+    return out.values.toList()
 }

@@ -3,6 +3,7 @@ package com.decio.skipii
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -23,16 +24,71 @@ import java.util.concurrent.ConcurrentHashMap
  * heart state by `toolbarStateKey`. Both live in `frameworkUpdates` entity mutations.
  */
 object CommentFeed {
-    suspend fun first(videoId: String): CommentsPage = withContext(Dispatchers.IO) {
+    /** First pages started ahead ([prefetch]), newest last; kept 10 minutes. */
+    private class Ahead(val at: Long, val page: kotlinx.coroutines.Deferred<CommentsPage>)
+    private val ahead = object : LinkedHashMap<String, Ahead>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Ahead>?) = size > 8
+    }
+    private val aheadScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private const val AheadMs = 10 * 60_000L
+
+    /**
+     * Starts loading [videoId]'s first page now (two requests, ~1–2 s), so the panel opens on
+     * comments instead of a spinner (Shorts: as each short comes on screen; 2026-10-29).
+     */
+    fun prefetch(videoId: String) = synchronized(ahead) {
+        val known = ahead[videoId]
+        if (known != null && System.currentTimeMillis() - known.at < AheadMs && !known.page.isCancelled) return@synchronized
+        ahead[videoId] = Ahead(System.currentTimeMillis(), aheadScope.async { load(videoId) })
+    }
+
+    suspend fun first(videoId: String): CommentsPage {
+        val early = synchronized(ahead) { ahead[videoId]?.takeIf { System.currentTimeMillis() - it.at < AheadMs } }
+        if (early != null) {
+            try {
+                return early.page.await()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                synchronized(ahead) { ahead.remove(videoId) }
+            }
+        }
+        return load(videoId)
+    }
+
+    private suspend fun load(videoId: String): CommentsPage = withContext(Dispatchers.IO) {
         var token: String? = null
-        InnerTube.postAny("next", JSONObject().put("videoId", videoId)).forEachObject { obj ->
+        val watch = InnerTube.postAny("next", JSONObject().put("videoId", videoId))
+        watch.forEachObject { obj ->
             if (token == null && obj.optString("sectionIdentifier") == "comment-item-section") {
                 token = obj.collectStrings("token").firstOrNull()
             }
         }
+        val chapters = parseChapters(watch)
         // No comments section at all: they're turned off for this video.
-        val start = token ?: return@withContext CommentsPage(emptyList(), total = -1, disabled = true, next = null)
-        parsePage(InnerTube.postAny("next", JSONObject().put("continuation", start)))
+        val start = token ?: return@withContext CommentsPage(emptyList(), total = -1, disabled = true, next = null, chapters = chapters)
+        parsePage(InnerTube.postAny("next", JSONObject().put("continuation", start))).copy(chapters = chapters)
+    }
+
+    /**
+     * The video's chapters from the watch page's player bar markers. Unlike NewPipeExtractor
+     * (description chapters only), this also reads YouTube's auto-generated chapters
+     * (`engagement-panel-macro-markers-auto-chapters`): each marker set is a `chapters` array of
+     * `chapterRenderer` {title, timeRangeStartMillis}; the first non-empty set wins.
+     */
+    internal fun parseChapters(page: JSONObject): List<Chapter> {
+        var found: List<Chapter>? = null
+        page.forEachObject { obj ->
+            if (found != null) return@forEachObject
+            val markers = obj.optJSONArray("chapters") ?: return@forEachObject
+            val list = (0 until markers.length()).mapNotNull { i ->
+                val ch = markers.optJSONObject(i)?.optJSONObject("chapterRenderer") ?: return@mapNotNull null
+                val title = ch.text("title")?.trim()?.ifBlank { null } ?: return@mapNotNull null
+                Chapter(ch.optLong("timeRangeStartMillis"), title)
+            }
+            if (list.isNotEmpty()) found = list.sortedBy { it.startMs }
+        }
+        return found.orEmpty()
     }
 
     /** The next page of comments, or one thread's replies (same call, different token). */

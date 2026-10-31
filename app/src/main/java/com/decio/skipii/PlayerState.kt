@@ -23,9 +23,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
-import kotlin.math.min
 import kotlin.math.roundToInt
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -78,6 +78,7 @@ class PlayerState(private val scope: CoroutineScope) {
     var videoControlsVisible by mutableStateOf(false)
         internal set
 
+
     init {
         // The service's stream recovery has no player event for its outcome: follow its state.
         scope.launch {
@@ -96,14 +97,28 @@ class PlayerState(private val scope: CoroutineScope) {
     private var aspectFromFrames = false
 
     /**
-     * Portrait player frame: the video's aspect within [StageMinAspect]..[StageMaxAspect], but
-     * not wider than [StageFrameAspect] (ultrawide letterboxes inside 16:9).
+     * The portrait player's shape: the video's own, within [StageMinAspect]..[StageMaxAspect].
+     * Audio only keeps it too (Derek, 2026-10-14), so switching never moves the page.
      */
-    val stageAspect: Float get() = if (AudioOnly.enabled) AudioStageAspect else {
-        min(videoAspect.coerceIn(StageMinAspect, StageMaxAspect), StageFrameAspect)
-    }
+    val stageAspect: Float get() = videoAspect.coerceIn(StageMinAspect, StageMaxAspect).coerceAtLeast(stageFloor)
+    /**
+     * The flattest the stage may be for the window, so it stays within [StageMaxHeightShare]
+     * of its height (a short split-screen pane); set by the shell from the window's size.
+     */
+    var stageFloor by mutableFloatStateOf(StageMinAspect)
+
     var firstFrameRendered by mutableStateOf(false)
         private set
+    /**
+     * The shared video surface still holds the frame from when audio only began. Turning video
+     * back on switches straight away, so the picture stays hidden (thumbnail + spinner) until
+     * the renderer draws a fresh frame, instead of showing that frozen one. Starting in audio
+     * only, the surface has no frame of this video yet either.
+     */
+    var videoStale by mutableStateOf(AudioOnly.enabled)
+        private set
+    /** Only once video is wanted again: going into audio only, the last frame stays as the audio stage fades over it. */
+    val hidesStaleVideo: Boolean get() = videoStale && !AudioOnly.enabled
     /** What the decoder is really producing, e.g. "1920×1080 · H.264 · itag 299". */
     var playingFormat by mutableStateOf<String?>(null)
         private set
@@ -112,12 +127,19 @@ class PlayerState(private val scope: CoroutineScope) {
         private set
 
     var expanded by mutableStateOf(false)
-    /** Landscape fullscreen requested (button) or entered (rotation). */
+    /** Fullscreen: requested (button, swipe up; upright for a vertical video) or entered (rotation). */
     var fullscreen by mutableStateOf(false)
     /** Which bottom sheet is open over the player, if any. */
     var sheet by mutableStateOf<PlayerSheet?>(null)
 
-    val comments = CommentsState(scope)
+    val comments = CommentsState(scope).apply {
+        // NewPipe only knows chapters typed into the description; YouTube's auto chapters come
+        // from the watch page the comments load from.
+        onChapters = { id, chapters ->
+            val d = details
+            if (d != null && d.item.id == id && d.chapters.isEmpty()) details = d.copy(chapters = chapters)
+        }
+    }
 
     // ── Signed-in account state for the open video (full sync) ──
     /** Like/subscribe state from the account; null while loading or signed out. */
@@ -174,7 +196,6 @@ class PlayerState(private val scope: CoroutineScope) {
         comments.clearFor(item.id)
         accountState = null
         inWatchLater = false
-        speedPanelOpen = false
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.videoState(item.id) }
@@ -198,6 +219,9 @@ class PlayerState(private val scope: CoroutineScope) {
                     else if (startPlayback) startPlayback(d.item)
                 }
                 .onFailure {
+                    // Cancelled by the next open (a bot-check wait can last ~40 s): this
+                    // video's outcome no longer matters, and the new load owns the state.
+                    if (it is CancellationException) throw it
                     Log.w(TAG, "details failed for ${item.id}", it)
                     error = YouTube.friendlyError(it)
                     // Comments wait for details; without this their spinner never stopped.
@@ -276,10 +300,20 @@ class PlayerState(private val scope: CoroutineScope) {
         continueIfEnded(player)
     }
 
+    /** The bar's Next: the queue's first video (the bar only offers it while the queue has one). */
+    fun playNextUp() {
+        if (queue.isNotEmpty()) playFromQueue(0)
+    }
+
+    /** The chapter playing at [ms], or null when the video has none. */
+    fun chapterAt(ms: Long): String? =
+        details?.chapters?.lastOrNull { it.startMs <= ms }?.title?.takeIf { it.isNotBlank() }
+
     /** [index] into [queue]. */
     fun playFromQueue(index: Int) {
         val player = controller ?: return
         player.seekTo(player.currentMediaItemIndex + 1 + index, 0L)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
         player.play()
     }
 
@@ -412,6 +446,76 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    // ── Save to playlist (GitHub issue #12) ──
+    /** The video the "Save to playlist" sheet is open for; null = closed. */
+    var playlistTarget by mutableStateOf<VideoItem?>(null)
+        private set
+    /** Its playlists (Watch later first); null while loading. */
+    var playlistChoices by mutableStateOf<List<PlaylistChoice>?>(null)
+        private set
+    var playlistError by mutableStateOf<String?>(null)
+        private set
+    private var choicesJob: Job? = null
+
+    fun openPlaylists(video: VideoItem) {
+        playlistTarget = video
+        playlistChoices = null
+        playlistError = null
+        choicesJob?.cancel()
+        choicesJob = scope.launch {
+            runCatching { InnerTube.saveChoices(video.id) }
+                .onSuccess { choices ->
+                    if (playlistTarget?.id != video.id) return@onSuccess
+                    playlistChoices = choices
+                    // The dialog's answer is the only place Watch later's state comes from.
+                    choices.firstOrNull { it.id == "WL" }?.contains?.let { if (current?.id == video.id) inWatchLater = it }
+                }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    Log.w(TAG, "playlists for ${video.id}", it)
+                    if (playlistTarget?.id == video.id) playlistError = YouTube.friendlyError(it)
+                }
+        }
+    }
+
+    fun closePlaylists() {
+        choicesJob?.cancel()
+        playlistTarget = null
+    }
+
+    /** Runs here, not in the sheet: closing the sheet mid-request would cancel it. */
+    fun setInPlaylist(video: VideoItem, choice: PlaylistChoice, add: Boolean) {
+        fun mark(value: Boolean?) {
+            playlistChoices = playlistChoices?.map { if (it.id == choice.id) it.copy(contains = value) else it }
+            if (choice.id == "WL" && current?.id == video.id && value != null) inWatchLater = value
+        }
+        mark(add)
+        scope.launch {
+            runCatching { InnerTube.setInPlaylist(choice.id, video.id, add) }
+                .onSuccess { actionMessage = if (add) "Saved to ${choice.title}" else "Removed from ${choice.title}" }
+                .onFailure {
+                    mark(choice.contains)
+                    actionMessage = "Couldn't update ${choice.title}."
+                    Log.w(TAG, "playlist ${choice.id} ${video.id}", it)
+                }
+        }
+    }
+
+    fun createPlaylist(video: VideoItem, title: String, privacy: String) {
+        scope.launch {
+            runCatching { InnerTube.createPlaylist(title, privacy, video.id) }
+                .onSuccess { id ->
+                    val made = PlaylistChoice(id, title, contains = true, privacy = privacy)
+                    playlistChoices = playlistChoices?.let { list ->
+                        val wl = list.takeWhile { it.id == "WL" }
+                        wl + made + list.drop(wl.size)
+                    }
+                    actionMessage = "Saved to $title"
+                }
+                .onFailure { actionMessage = "Couldn't create the playlist."; Log.w(TAG, "create playlist", it) }
+        }
+    }
+
     /**
      * Switches quality (null = Auto). The media source is rebuilt from the cached stream
      * info at the same position, keeping play/pause as it was.
@@ -451,7 +555,11 @@ class PlayerState(private val scope: CoroutineScope) {
     fun seekTo(ms: Long) {
         val player = controller ?: return
         val max = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-        player.seekTo(ms.coerceIn(0L, max))
+        val to = ms.coerceIn(0L, max)
+        // A restored, not-yet-prepared item isn't known to be seekable, so Media3 drops a plain
+        // seek (scrubs and chapter taps did nothing until play); seeking to the item itself is allowed.
+        if (player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) player.seekTo(to)
+        else player.seekTo(player.currentMediaItemIndex, to)
         positionMs = player.currentPosition
     }
 
@@ -519,6 +627,7 @@ class PlayerState(private val scope: CoroutineScope) {
     /** Audio only for the whole app: the video track goes off (or back on) right away. */
     fun setAudioOnly(on: Boolean) {
         AudioOnly.set(on)
+        if (on) videoStale = true
         applyVideoTrack()
     }
 
@@ -540,12 +649,23 @@ class PlayerState(private val scope: CoroutineScope) {
      */
     private var wantBackground = false
 
-    /** Video is off in the background and whenever audio only is on. */
+    /**
+     * The Shorts tab is open: the paused video gives its decoder back (Shorts keeps four of
+     * its own; with this one too the fourth failed to start on the emulator, 2026-10-28).
+     */
+    fun setVideoAside(aside: Boolean) {
+        wantAside = aside
+        applyVideoTrack()
+    }
+
+    private var wantAside = false
+
+    /** Video is off in the background, while Shorts is open and whenever audio only is on. */
     private fun applyVideoTrack() {
-        val off = wantBackground || AudioOnly.enabled
+        val off = wantBackground || wantAside || AudioOnly.enabled
         val player = controller ?: return
         if (player.trackSelectionParameters.disabledTrackTypes.contains(androidx.media3.common.C.TRACK_TYPE_VIDEO) == off) return
-        Log.i(TAG, if (off) "video off (${if (AudioOnly.enabled) "audio only" else "background"})" else "video on")
+        Log.i(TAG, if (off) "video off (${if (AudioOnly.enabled) "audio only" else if (wantAside) "Shorts" else "background"})" else "video on")
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, off)
             .build()
@@ -575,6 +695,7 @@ class PlayerState(private val scope: CoroutineScope) {
         controller?.videoSize?.let(::takeVideoSize)
         pendingStart?.let { pendingStart = null; startPlayback(it); return }
         val player = controller ?: return
+        if (player.mediaItemCount == 0 && current == null) { restoreSession(player); return }
         rebuildQueue()
         val playing = player.currentMediaItem ?: return
         if (current != null || playing.mediaId.isBlank()) return
@@ -594,6 +715,24 @@ class PlayerState(private val scope: CoroutineScope) {
         loadJob = scope.launch {
             runCatching { YouTube.details(item.id) }.onSuccess { details = it; current = it.item }
         }
+    }
+
+    /**
+     * Fresh service after a crash, force stop or swipe from Recents: put back what was open
+     * ([SavedSession]) as the mini-player, paused where it was left. Not prepared, so nothing
+     * downloads until play (togglePlay / playFromQueue prepare an idle player).
+     */
+    private fun restoreSession(player: MediaController) {
+        val saved = SavedSession.load().takeIf { it.isNotEmpty() } ?: return
+        val items = saved.map {
+            VideoItem(
+                id = it.id, title = it.title, channel = it.channel, channelUrl = null, thumbnail = it.thumbnail,
+                avatar = null, durationSec = it.durationSec, views = -1, uploaded = null,
+            ).also { item -> known[item.id] = item }
+        }
+        Log.i(TAG, "restoring ${items.first().id} + ${items.size - 1} queued")
+        player.setMediaItems(items.map(::mediaItemFor), 0, ResumeStore.startPosition(items.first().id))
+        show(items.first(), startPlayback = false)
     }
 
     internal fun syncFromPlayer() {
@@ -629,6 +768,7 @@ class PlayerState(private val scope: CoroutineScope) {
         override fun onRenderedFirstFrame() {
             Log.i("SkipiiTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
             firstFrameRendered = true
+            videoStale = false
         }
 
         override fun onPlayerError(e: PlaybackException) {
