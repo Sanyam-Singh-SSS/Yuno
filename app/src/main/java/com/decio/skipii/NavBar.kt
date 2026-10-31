@@ -98,9 +98,18 @@ import kotlin.math.sin
 // 62 dp (Derek, 2026-10-05): between Castii's 56 and Ledgii's 78. Tabs keep 50 dp targets.
 internal val NavHeight = 62.dp
 internal val NavWidth = 328.dp
-// 0.5.50: five tabs (Shorts); the active pill keeps about the width it had among four, so
-// "Subscriptions" still fits. With Shorts turned off ([ShortsSetting]) it's four tabs again.
-private fun selectedTabWeight(tabs: Int) = if (tabs > 4) 3.5f else 2.2f
+// 0.5.50: five tabs (Shorts); the active pill keeps about the width it had among four.
+// "Subscriptions" is much longer than Home/Shorts/Library, so it gets extra weight or the
+// label hugs the pill edges and sits too close to its neighbours. Shorts off → four tabs.
+private fun selectedTabWeight(tabs: Int, selected: Tab): Float {
+    val long = selected == Tab.Subscriptions
+    return when {
+        tabs > 4 && long -> 4.8f
+        tabs > 4 -> 3.5f
+        long -> 3.0f
+        else -> 2.2f
+    }
+}
 // The open player's bar is compact (Derek, 2026-10-19: play pill ~60% of its first 161 dp,
 // the ±10 buttons tight beside it): it narrows from the tab bar's width as the player opens.
 // 0.5.32 (Derek, 2026-10-25: mockup A "Lift" in docs/design/player-bar-reach.html): a size up
@@ -305,7 +314,11 @@ internal fun NavPill(
                             if (active) c.primary else c.primary.copy(alpha = 0f),
                             if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabPill",
                         )
-                        val weight by animateFloatAsState(if (active) selectedTabWeight(shown.size) else 1f, spec, label = "tabWeight")
+                        val weight by animateFloatAsState(
+                            if (active) selectedTabWeight(shown.size, t) else 1f,
+                            spec,
+                            label = "tabWeight",
+                        )
                         val interaction = remember(t) { MutableInteractionSource() }
                         Box(
                             Modifier
@@ -335,7 +348,13 @@ internal fun NavPill(
                                 },
                         ) {
                             CompositionLocalProvider(LocalContentColor provides labelColor) {
-                                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                // Side inset so the label doesn't sit flush on the pill (Subscriptions
+                                // was especially tight against its neighbours).
+                                Row(
+                                    Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
                                     Icon(if (active) t.selectedIcon else t.icon, contentDescription = t.label, modifier = Modifier.size(22.dp))
                                     AnimatedVisibility(
                                         visible = active,

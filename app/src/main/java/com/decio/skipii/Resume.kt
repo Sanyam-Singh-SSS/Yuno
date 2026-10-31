@@ -6,7 +6,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -65,6 +68,82 @@ object ResumeStore {
         val edit = prefs?.edit()
         extra.forEach { positions.remove(it); edit?.remove(it) }
         edit?.apply()
+    }
+}
+
+/**
+ * Local watch history for Library when signed out (and a backup while signed in).
+ * Newest first; rewatching moves a video to the front. Written from [PlayerState].
+ */
+object WatchHistory {
+    private const val MAX = 100
+    private const val KEY = "items"
+
+    private var prefs: SharedPreferences? = null
+    /** Newest first; observable so Library updates as videos play. */
+    var videos by mutableStateOf<List<VideoItem>>(emptyList())
+        private set
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("watch_history", Context.MODE_PRIVATE).also { prefs = it }
+        videos = load(p)
+    }
+
+    fun record(item: VideoItem) {
+        if (item.id.isBlank()) return
+        val next = buildList {
+            add(item)
+            videos.filter { it.id != item.id }.forEach { add(it) }
+        }.take(MAX)
+        videos = next
+        persist(next)
+    }
+
+    private fun load(p: SharedPreferences): List<VideoItem> {
+        val raw = p.getString(KEY, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").ifBlank { return@mapNotNull null }
+                VideoItem(
+                    id = id,
+                    title = o.optString("title"),
+                    channel = o.optString("channel"),
+                    channelUrl = o.optString("channelUrl").ifBlank { null },
+                    thumbnail = o.optString("thumbnail").ifBlank { null },
+                    avatar = o.optString("avatar").ifBlank { null },
+                    durationSec = o.optLong("duration"),
+                    views = o.optLong("views", -1),
+                    uploaded = o.optString("uploaded").ifBlank { null },
+                )
+            }
+        } catch (e: JSONException) {
+            Log.w("Skipii", "watch history unreadable, dropped", e)
+            p.edit().remove(KEY).apply()
+            emptyList()
+        }
+    }
+
+    private fun persist(items: List<VideoItem>) {
+        val edit = prefs?.edit() ?: return
+        if (items.isEmpty()) { edit.remove(KEY).apply(); return }
+        val array = JSONArray()
+        items.forEach {
+            array.put(
+                JSONObject()
+                    .put("id", it.id)
+                    .put("title", it.title)
+                    .put("channel", it.channel)
+                    .put("channelUrl", it.channelUrl.orEmpty())
+                    .put("thumbnail", it.thumbnail.orEmpty())
+                    .put("avatar", it.avatar.orEmpty())
+                    .put("duration", it.durationSec)
+                    .put("views", it.views)
+                    .put("uploaded", it.uploaded.orEmpty()),
+            )
+        }
+        edit.putString(KEY, array.toString()).apply()
     }
 }
 

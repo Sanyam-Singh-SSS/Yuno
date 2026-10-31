@@ -196,6 +196,8 @@ class PlayerState(private val scope: CoroutineScope) {
         comments.clearFor(item.id)
         accountState = null
         inWatchLater = false
+        // Local Library history (guest + signed-in backup); YouTube's own history still needs sign-in.
+        WatchHistory.record(item)
         if (Account.signedIn) {
             scope.launch {
                 runCatching { InnerTube.videoState(item.id) }
@@ -215,6 +217,8 @@ class PlayerState(private val scope: CoroutineScope) {
                     // page fetch and only slowed down the critical path.
                     comments.load(item.id)
                     known[item.id] = d.item
+                    // Refresh the history row with title/thumb/duration from details.
+                    WatchHistory.record(d.item)
                     if (!d.playable) error = "No playable stream was found for this video."
                     else if (startPlayback) startPlayback(d.item)
                 }

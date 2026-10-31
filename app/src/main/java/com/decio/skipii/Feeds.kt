@@ -31,7 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** A pageable list of videos from the signed-in account (home, subscriptions, history, a playlist). */
+/** A pageable list of videos (home works as guest; subscriptions / history / playlists need sign-in). */
 @Stable
 class FeedState(
     private val scope: CoroutineScope,
@@ -79,7 +79,10 @@ class FeedState(
                     if (freshOnRefresh) it.videos.forEach { v -> shown += v.id }
                     it.videos.take(prefetchTop).forEach { v -> StreamCache.prefetch(v.id) }
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure {
+                    android.util.Log.w("Skipii", "feed load failed", it)
+                    error = friendly(it)
+                }
             loading = false
             refreshing = false
         }
@@ -98,7 +101,10 @@ class FeedState(
                     if (freshOnRefresh) added.forEach { v -> shown += v.id }
                     next = page.next
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure {
+                    android.util.Log.w("Skipii", "feed more failed", it)
+                    error = friendly(it)
+                }
             loading = false
         }
     }
@@ -143,7 +149,9 @@ class FeedState(
 /** Everything the signed-in tabs show, kept above the tab switcher so it survives tab changes. */
 @Stable
 class LibraryData(scope: CoroutineScope) {
-    val home = FeedState(scope, prefetchTop = 2, freshOnRefresh = true) { InnerTube.home(it) }
+    val home = FeedState(scope, prefetchTop = 2, freshOnRefresh = true) { next ->
+        if (Account.signedIn) InnerTube.home(next) else InnerTube.guestHome(next)
+    }
     val subscriptions = FeedState(scope, prefetchTop = 2) { InnerTube.subscriptionsFeed(it) }
     val history = FeedState(scope) { InnerTube.history(it) }
     var channels by mutableStateOf<List<ChannelRef>>(emptyList())
@@ -222,6 +230,14 @@ fun FeedList(
                     icon = Icons.Rounded.CloudOff,
                     title = "Couldn't load this",
                     body = feed.error.orEmpty(),
+                    action = { PillButton("Try again", { feed.refresh() }) },
+                )
+            }
+            !feed.loading && listVideos.isEmpty() -> item {
+                EmptyState(
+                    icon = Icons.Rounded.CloudOff,
+                    title = "Nothing here yet",
+                    body = "Pull down to refresh, or try again in a moment.",
                     action = { PillButton("Try again", { feed.refresh() }) },
                 )
             }

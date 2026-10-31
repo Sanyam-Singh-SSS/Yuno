@@ -92,32 +92,15 @@ fun HomeScreen(
     onAccount: () -> Unit,
     scrollToTop: Int = 0,
 ) {
+    // Guest or signed in: same Home feed. Signed out uses an anonymous visitor; sign-in swaps
+    // to the account's recommendations after [LibraryData.reset].
     val signedIn = Account.signedIn
-    LaunchedEffect(signedIn) { if (signedIn) lib.home.ensureLoaded() }
+    LaunchedEffect(signedIn) { lib.home.ensureLoaded() }
     CollapsingHeaderLayout(
         resetKey = scrollToTop to lib.home.generation,
         header = { ScreenHeader(title = "Skipii", brandMark = true) { UpdateAction(); HeaderActions(onSearch, onAccount) } },
     ) { top ->
-        if (signedIn) {
-            FeedList(lib.home, contentPadding.withTop(top), onOpen, scrollToTop = scrollToTop, indicatorTop = top)
-        } else {
-            LazyColumn(contentPadding = contentPadding.withTop(top)) {
-                item {
-                    EmptyState(
-                        icon = Icons.Rounded.Subscriptions,
-                        title = "Your recommendations, minus the ads",
-                        body = "Sign in with Google to see your own YouTube home feed, or just search.",
-                        action = {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                PillButton("Sign in with Google", onSignIn)
-                                Spacer(Modifier.height(12.dp))
-                                TextLink("Search instead", onSearch)
-                            }
-                        },
-                    )
-                }
-            }
-        }
+        FeedList(lib.home, contentPadding.withTop(top), onOpen, scrollToTop = scrollToTop, indicatorTop = top)
     }
 }
 
@@ -311,6 +294,7 @@ fun LibraryScreen(
     scrollToTop: Int = 0,
 ) {
     val signedIn = Account.signedIn
+    val localHistory = WatchHistory.videos
     LaunchedEffect(signedIn) {
         if (signedIn) {
             lib.history.ensureLoaded()
@@ -319,7 +303,7 @@ fun LibraryScreen(
         }
     }
     CollapsingHeaderLayout(
-        resetKey = scrollToTop to lib.history.generation,
+        resetKey = scrollToTop to (if (signedIn) lib.history.generation else localHistory.size),
         header = { ScreenHeader(title = "Library") { HeaderActions(onSearch, onAccount) } },
     ) { top ->
         PullToRefresh(
@@ -329,20 +313,9 @@ fun LibraryScreen(
             topPadding = top,
         ) {
         LazyColumn(state = rememberScrollToTop(scrollToTop), contentPadding = contentPadding.withTop(top)) {
-            if (!signedIn) {
-                item {
-                    EmptyState(
-                        icon = Icons.Rounded.VideoLibrary,
-                        title = "Your library",
-                        body = "Sign in with Google for your history, Watch later, liked videos and playlists.",
-                        action = { PillButton("Sign in with Google", onSignIn) },
-                    )
-                }
-                return@LazyColumn
-            }
             item(key = "historyTitle") { SectionTitle("History") }
             item(key = "history") {
-                val history = lib.history.videos
+                val history = if (signedIn) lib.history.videos else localHistory
                 when {
                     history.isNotEmpty() -> LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -350,25 +323,41 @@ fun LibraryScreen(
                     ) {
                         items(history.take(20), key = { "h-" + it.id }) { video -> HistoryCard(video) { onOpen(video) } }
                     }
-                    lib.history.loading -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
+                    signedIn && lib.history.loading -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 4.dp, modifier = Modifier.size(28.dp))
                     }
                     else -> Text(
-                        lib.history.error ?: "Nothing watched yet.",
+                        if (signedIn) lib.history.error ?: "Nothing watched yet."
+                        else "Videos you watch on this phone show up here.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 20.dp),
                     )
                 }
             }
-            item(key = "playlistsTitle") { SectionTitle("Playlists") }
-            val pinned = listOf(
-                PlaylistRef("WL", "Watch later", null, null),
-                PlaylistRef("LL", "Liked videos", null, null),
-            )
-            items((pinned + lib.playlists).chunked(2), key = { row -> row.joinToString { it.id } }) { row ->
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { pl -> PlaylistTile(pl, Modifier.weight(1f)) { onOpenPlaylist(pl) } }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+            if (signedIn) {
+                item(key = "playlistsTitle") { SectionTitle("Playlists") }
+                val pinned = listOf(
+                    PlaylistRef("WL", "Watch later", null, null),
+                    PlaylistRef("LL", "Liked videos", null, null),
+                )
+                items((pinned + lib.playlists).chunked(2), key = { row -> row.joinToString { it.id } }) { row ->
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { pl -> PlaylistTile(pl, Modifier.weight(1f)) { onOpenPlaylist(pl) } }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            } else {
+                item(key = "signInNudge") {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                        Text(
+                            "Sign in for Watch later, liked videos and playlists.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        PillButton("Sign in with Google", onSignIn)
+                    }
                 }
             }
         }
@@ -381,7 +370,7 @@ private fun HistoryCard(video: VideoItem, onClick: () -> Unit) {
     val menu = LocalVideoMenu.current
     Column(Modifier.width(168.dp).prefetchOnPress(video.id).pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)) {
         Box(Modifier.padding(horizontal = FeedVideoThumbInset)) {
-            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = FeedVideoThumbRadius)
+            Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = FeedVideoThumbRadius, videoId = video.id)
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true)
         }
         Spacer(Modifier.height(7.dp))
@@ -519,7 +508,6 @@ class SearchState(private val scope: CoroutineScope) {
             return
         }
         suggestJob = scope.launch {
-            delay(220)
             suggestionsLoading = true
             runCatching { YouTube.searchSuggestions(text) }
                 .onSuccess { suggestions = it }
@@ -653,53 +641,44 @@ fun SearchScreen(
             }
         },
     ) { top ->
-        val listShown = showHistory || draft || (state.results.isNotEmpty() && state.error == null)
+        val listShown = showHistory || (draft && state.suggestions.isNotEmpty()) ||
+            (state.results.isNotEmpty() && state.error == null)
         Box(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = if (listShown) 0.dp else top)) {
         when {
-            draft -> {
-                if (state.suggestionsLoading && state.suggestions.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().padding(top = 32.dp), Alignment.Center) {
-                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                    }
-                } else if (state.suggestions.isEmpty()) {
-                    EmptyState(
-                        icon = Icons.Rounded.Search,
-                        title = "Keep typing",
-                        body = "Suggestions appear as you enter a search.",
-                    )
-                } else {
-                    LazyColumn(contentPadding = contentPadding) {
-                        items(state.suggestions, key = { it }) { suggestion ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .pressable {
-                                        state.updateQuery(suggestion)
-                                        submit()
-                                    }
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Search,
-                                    null,
-                                    tint = c.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                                Spacer(Modifier.width(16.dp))
-                                Text(
-                                    suggestion,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
+            draft && state.suggestions.isNotEmpty() -> {
+                LazyColumn(contentPadding = contentPadding.withTop(top)) {
+                    items(state.suggestions, key = { it }) { suggestion ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pressable {
+                                    state.updateQuery(suggestion)
+                                    submit()
+                                }
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Search,
+                                null,
+                                tint = c.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                suggestion,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
             }
+            // Still drafting: wait for suggestions (no "keep typing" placeholder).
+            draft -> Unit
             showHistory -> SearchHistoryList(
                 history = history,
                 contentPadding = contentPadding.withTop(top),

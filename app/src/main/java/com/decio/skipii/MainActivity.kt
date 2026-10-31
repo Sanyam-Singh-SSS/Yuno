@@ -155,8 +155,8 @@ class MainActivity : ComponentActivity() {
 
 enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Rounded.Home),
-    Subscriptions("Subscriptions", Icons.Outlined.Subscriptions, Icons.Rounded.Subscriptions),
     Shorts("Shorts", Icons.Outlined.SlowMotionVideo, Icons.Rounded.SlowMotionVideo),
+    Subscriptions("Subscriptions", Icons.Outlined.Subscriptions, Icons.Rounded.Subscriptions),
     Library("Library", Icons.Outlined.VideoLibrary, Icons.Rounded.VideoLibrary),
 }
 
@@ -167,11 +167,26 @@ private val MiniGap = 8.dp
 @Composable
 fun SkipiiApp() {
     val c = MaterialTheme.colorScheme
+    var onboardingDone by remember { mutableStateOf(Onboarding.completed) }
+    var signingIn by remember { mutableStateOf(false) }
+    // First launch: finish setup before the tabs / player / feeds start.
+    if (!onboardingDone) {
+        OnboardingScreen(
+            onFinished = { onboardingDone = true },
+            onSignIn = { signingIn = true },
+        )
+        if (signingIn) {
+            SignInScreen(
+                onDone = { signingIn = false },
+                onCancel = { signingIn = false },
+            )
+        }
+        return
+    }
     val player = rememberPlayerState()
     val scope = rememberCoroutineScope()
     val search = remember { SearchState(scope) }
     val lib = remember { LibraryData(scope) }
-    var signingIn by remember { mutableStateOf(false) }
     var accountSheet by remember { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
     var openChannel by remember { mutableStateOf<String?>(null) }
