@@ -85,7 +85,7 @@ fun GlassNavBar(
                     // the gesture on the outside of the glass).
                     modifier = Modifier.miniPlayerPullGestures(pull).then(accessoryModifier),
                     shape = pillShape,
-                    showVideo = visible && !player.expanded,
+                    showVideo = visible && dock?.coversMiniArt != true,
                     compact = true,
                     // Only the row the fold is settling on reports where the artwork lands.
                     dock = if (visible) dock else null,
@@ -101,7 +101,7 @@ fun GlassNavBar(
                     onExpand = onExpandPlayer,
                     modifier = Modifier.miniPlayerPullGestures(pull).fillMaxWidth().then(accessoryModifier),
                     shape = pillShape,
-                    showVideo = visible && !player.expanded,
+                    showVideo = visible && dock?.coversMiniArt != true,
                     dock = if (visible) dock else null,
                     pull = null,
                 )

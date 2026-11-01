@@ -143,8 +143,10 @@ class PlaybackService : MediaSessionService() {
             return
         }
         // Swiping the app away from Recents pauses and ends the session, playing or not
-        // (Derek, 2026-10-10; it used to keep playing). onDestroy saves the resume point.
+        // (Derek, 2026-10-10; it used to keep playing), and drops the open video so the next
+        // launch doesn't put it back. onDestroy still saves the resume point.
         Log.i("Skipii", "task removed: pausing and stopping")
+        SavedSession.discard()
         pauseAllPlayersAndStopSelf()
     }
 

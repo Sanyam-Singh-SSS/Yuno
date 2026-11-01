@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ fun Modifier.playerDockArt(dock: PlayerDock?, corner: Dp): Modifier {
 fun Modifier.miniPlayerPullGestures(pull: MiniPlayerPull?): Modifier = composed {
     if (pull == null) return@composed Modifier
     val currentPull by rememberUpdatedState(pull)
+    val pinMini by remember(pull) { derivedStateOf { pull.pinsMini } }
     val scope = rememberCoroutineScope()
     val lift = remember { mutableFloatStateOf(0f) }
     val settle = remember { arrayOfNulls<Job>(1) }
@@ -104,5 +106,5 @@ fun Modifier.miniPlayerPullGestures(pull: MiniPlayerPull?): Modifier = composed 
                 ) { value, _ -> lift.floatValue = value }
             }
         }
-    }.graphicsLayer { translationY = -lift.floatValue }
+    }.graphicsLayer { translationY = if (pinMini) 0f else -lift.floatValue }
 }

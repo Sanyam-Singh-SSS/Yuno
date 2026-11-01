@@ -207,6 +207,10 @@ fun SkipiiApp() {
     }
     val activeDock = playerDock
     val playerPull = playerSheetMotion.takeIf { !reduced }
+    // Known before the sheet exists, so a pull starts at the bottom instead of
+    // flashing the page fully open and then clearing it.
+    playerSheetMotion.windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    LaunchedEffect(player.current?.id) { HeldFrame.image = null }
 
     // The screen stays on while a video plays (full player, mini-player or fullscreen);
     // paused, the normal timeout applies again. Only affects the visible window.
@@ -486,17 +490,23 @@ fun SkipiiApp() {
         )
         BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
 
-        NowPlayingSheet(
-            visible = showNowPlaying && !showFullscreen,
-            player = player,
-            motion = playerSheetMotion,
-            dock = playerDock,
-            reducedMotion = reduced,
-            onOpen = player::open,
-            onDismiss = { showNowPlaying = false },
-            onFullscreen = { toggleFullscreen() },
-            bottomClearance = stackBottom + NavHeight + 16.dp,
-        )
+        val playerSheetContext = remember {
+            android.view.ContextThemeWrapper(activity, R.style.Theme_Skipii_PlayerSheet)
+        }
+        CompositionLocalProvider(LocalContext provides playerSheetContext) {
+            NowPlayingSheet(
+                visible = showNowPlaying,
+                fullscreen = showFullscreen,
+                player = player,
+                motion = playerSheetMotion,
+                dock = playerDock,
+                reducedMotion = reduced,
+                onOpen = player::open,
+                onDismiss = { showNowPlaying = false },
+                onFullscreen = { toggleFullscreen() },
+                bottomClearance = stackBottom + NavHeight + 16.dp,
+            )
+        }
 
         // The nav pill steps down out of the way of the comments panel (its composer sits there).
         val navAside by animateFloatAsState(
@@ -558,7 +568,7 @@ fun SkipiiApp() {
                     MiniPlayer(
                         player,
                         onExpand = { player.expanded = true },
-                        showVideo = !showNowPlaying && !showFullscreen,
+                        showVideo = !showFullscreen && !playerDock.coversMiniArt,
                         dock = activeDock,
                         pull = playerPull,
                         modifier = Modifier.fillMaxWidth(),
@@ -600,8 +610,6 @@ fun SkipiiApp() {
         }
 
         if (shortsShown) ShortsChannelMenu(shorts, bottom = stackBottom + GlassHeight + 10.dp, onChannel = ::showChannel)
-
-        if (showFullscreen) FullscreenPlayer(player, onExit = { orientation.exitFullscreen() })
 
         if (accountSheet) {
             AccountSheet(

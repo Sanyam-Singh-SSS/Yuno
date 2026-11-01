@@ -149,17 +149,39 @@ object WatchHistory {
 
 /**
  * What was loaded when the app last went away: the current video and the queue behind it.
- * Written by the service on every playlist change, so a crash, force stop or swipe from
- * Recents leaves it in place; closing the mini-player empties the playlist and so clears it.
- * On the next launch the UI puts it back, paused, at the video's [ResumeStore] position.
+ * Written by the service on every playlist change, so a crash or a force stop leaves it in
+ * place; closing the mini-player empties the playlist and so clears it. Swiping the app away
+ * from Recents discards it ([discard]), so the next launch has no video. On the next launch
+ * the UI puts a kept session back, paused, at the video's [ResumeStore] position.
  */
 object SavedSession {
     class Entry(val id: String, val title: String, val channel: String, val thumbnail: String?, val durationSec: Long)
 
     private var prefs: SharedPreferences? = null
 
+    /**
+     * Set when the user swipes the app away. Stays set if this process survives, so the
+     * player's shutdown events can't write the playlist back. Cleared when a video is opened.
+     */
+    @Volatile
+    private var discarded = false
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
+    }
+
+    /**
+     * Forget the open video. [commit] so the clear is on disk before the process can be
+     * killed; it also waits out any playlist write already queued.
+     */
+    fun discard() {
+        discarded = true
+        prefs?.edit()?.remove("items")?.commit()
+    }
+
+    /** A video was opened again, so playlist changes are worth keeping. */
+    fun resumeSaving() {
+        discarded = false
     }
 
     /** Current video first, then the queue; empty when nothing was left open. */
@@ -180,6 +202,7 @@ object SavedSession {
     }
 
     fun save(items: List<Entry>) {
+        if (discarded) return
         val edit = prefs?.edit() ?: return
         if (items.isEmpty()) { edit.remove("items").apply(); return }
         val array = JSONArray()

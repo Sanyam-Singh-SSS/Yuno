@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -131,14 +132,22 @@ internal const val StageMaxAspect = 2.4f
  */
 internal const val StageMaxHeightShare = 0.6f
 
-/** How much of the open the rest of the page waits before it starts to appear (BitChord). */
-private const val DOCK_FADE_LEAD = 0.15f
-
-/** 0 at the mini player, 1 fully open. The page stays clear for the first stretch. */
-private fun dockFade(open: Float): Float {
-    if (open >= 1f) return 1f
-    return ((open - DOCK_FADE_LEAD) / (1f - DOCK_FADE_LEAD)).coerceIn(0f, 1f).coerceAtLeast(1f / 255f)
+/** Fades the page with the sheet. Nothing is drawn while it should be clear, so it can't flash solid first. */
+private fun Modifier.playerPageFade(alpha: () -> Float): Modifier = drawWithContent {
+    val a = alpha()
+    if (a <= 0f) return@drawWithContent
+    if (a >= 1f) {
+        drawContent()
+        return@drawWithContent
+    }
+    val paint = pageFadePaint
+    paint.alpha = a
+    drawContext.canvas.saveLayer(Rect(Offset.Zero, size), paint)
+    drawContent()
+    drawContext.canvas.restore()
 }
+
+private val pageFadePaint = androidx.compose.ui.graphics.Paint()
 
 // ── Full player (portrait) ─────────────────────────────────────────────────────
 
@@ -192,18 +201,18 @@ fun PlayerScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = dockFade(progress()) }
+                .playerPageFade { dock.pageAlpha(sheetMotion.holding) }
                 .background(pageColor),
         )
         Box(
             Modifier.fillMaxWidth().height(520.dp)
-                .graphicsLayer { alpha = dockFade(progress()) }
+                .playerPageFade { dock.pageAlpha(sheetMotion.holding) }
                 .background(Brush.verticalGradient(listOf(c.primaryContainer.copy(alpha = 0.75f), c.surface))),
         )
         ActionMessage(
             state,
             Modifier.align(Alignment.BottomCenter).zIndex(1f)
-                .graphicsLayer { alpha = dockFade(progress()) }
+                .playerPageFade { dock.pageAlpha(sheetMotion.holding) }
                 .padding(bottom = bottomClearance + 8.dp),
         )
         Column(Modifier.fillMaxSize()) {
@@ -221,7 +230,7 @@ fun PlayerScreen(
                     .weight(1f)
                     .zIndex(0f)
                     .nestedScroll(sheetDismissScroll(sheetMotion))
-                    .graphicsLayer { alpha = dockFade(progress()) },
+                    .playerPageFade { dock.pageAlpha(sheetMotion.holding) },
                 contentPadding = PaddingValues(bottom = bottomClearance + 16.dp),
             ) {
                 item(key = "info") {
@@ -316,7 +325,7 @@ fun PlayerScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(bottom + 130.dp)
-                .graphicsLayer { alpha = dockFade(progress()) }
+                .playerPageFade { dock.pageAlpha(sheetMotion.holding) }
                 .drawBehind { drawRect(vignette) },
         )
         // Swiping home from the bottom edge never scrolls the details (open player only: while
@@ -470,6 +479,9 @@ private fun VideoStage(
             val off = dock.offset() ?: 0f
             stageAnchor.origin = coords.positionOnScreen() - Offset(0f, off)
             if (!dock.attached) dock.attached = true
+            // Only a measurement from after the sheet has settled into place.
+            // The one before that sits a step low and flashes under the slot.
+            if (sheetMotion.placed && dock.miniArtOnScreen() != null) dock.notePose()
         }
         .graphicsLayer {
             // Rubber band: up to 6% bigger, ever more slowly, growing down from the top edge.
@@ -483,6 +495,10 @@ private fun VideoStage(
             val origin = stageAnchor.origin
             val mini = dock.miniArtOnScreen()
             val off = dock.offset() ?: 0f
+            // Hidden until a real dock pose exists. Drawing earlier paints the
+            // frame a step under the mini player's video.
+            val parkedOpen = p >= 0.999f
+            alpha = if (dock.poseReady && (p > 0f || parkedOpen)) 1f else 0f
             if (origin != null && mini != null && p < 0.999f) {
                 // Predict this frame's place from the anchor and the offset the
                 // finger is on now. The layout position is a frame behind a fast
@@ -551,6 +567,7 @@ private fun VideoStage(
             .then(stage),
     ) {
         if (showVideo) {
+            val flying by remember { derivedStateOf { dock.poseReady && dock.openFraction() > 0f } }
             VideoContent(
                 state = state,
                 fullscreen = false,
@@ -560,7 +577,10 @@ private fun VideoStage(
                 onToggleFullscreen = onFullscreen,
                 controlsAlpha = controlsAlpha,
                 portraitEdgeScrub = true,
-                modifier = Modifier.fillMaxSize(),
+                liveSurface = flying,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = if (flying) 1f else 0f },
             )
         }
         if (showAudio) {
@@ -828,10 +848,15 @@ fun MiniPlayer(
                     .playerDockArt(dock, thumbRadius)
                     .clip(RoundedCornerShape(thumbRadius)),
             ) {
-                // The still stays until the flying video is actually over this
-                // slot. Clearing it as soon as the player opened left a hole
-                // for as long as the sheet took to draw.
-                Thumbnail(item.thumbnail, Modifier.fillMaxSize(), radius = 0)
+                // The captured frame, not the poster. The poster was a different
+                // picture, so it flashed in whenever the live view moved.
+                Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
+                    if (HeldFrame.image != null && !state.hidesStaleVideo) {
+                        HeldFrameImage(Modifier.fillMaxSize().aspectFit(state.videoAspect))
+                    } else {
+                        Thumbnail(item.thumbnail, Modifier.fillMaxSize().aspectFit(state.videoAspect), radius = 0)
+                    }
+                }
                 if (showVideo && !AudioOnly.enabled) {
                     Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
                         LocalVideoSurface.current(Modifier.fillMaxSize().aspectFit(state.videoAspect).hideStaleVideo(state))

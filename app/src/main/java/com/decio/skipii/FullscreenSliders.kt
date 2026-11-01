@@ -66,10 +66,11 @@ import com.decio.skipii.icons.SfIcons
  * in the bottom third, and the pill disagreed with the system slider (40% vs its 82%).
  */
 @Stable
-class FullscreenSliders(context: Context) {
+class FullscreenSliders(context: Context, playerWindow: android.view.Window? = null) {
     enum class Kind { Brightness, Volume }
 
-    private val activity = context as? Activity
+    private val activity = context.findActivity()
+    private val window = playerWindow ?: activity?.window
     private val audio = context.getSystemService(AudioManager::class.java)
     private val maxVolume = audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 1
 
@@ -124,7 +125,7 @@ class FullscreenSliders(context: Context) {
      * system's (which follows adaptive brightness too: Android writes what it picked into it).
      */
     private fun currentBrightness(): Float {
-        val own = activity?.window?.attributes?.screenBrightness ?: -1f
+        val own = window?.attributes?.screenBrightness ?: -1f
         if (own >= 0f) return toSlider(own)
         val system = runCatching { Settings.System.getInt(activity?.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(128)
         // The setting's 1..255 is the 0..1 brightness, linearly (BrightnessSynchronizer).
@@ -132,15 +133,26 @@ class FullscreenSliders(context: Context) {
     }
 
     private fun setBrightness(slider: Float) {
-        val window = activity?.window ?: return
+        val host = window ?: return
         // Never fully 0: some screens go black at 0 and the slider would look broken.
-        window.attributes = window.attributes.apply { screenBrightness = fromSlider(slider).coerceAtLeast(0.002f) }
+        host.attributes = host.attributes.apply { screenBrightness = fromSlider(slider).coerceAtLeast(0.002f) }
     }
 
     /** Back to following the system's brightness. */
     fun releaseBrightness() {
-        val window = activity?.window ?: return
-        window.attributes = window.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE }
+        val host = window ?: return
+        host.attributes = host.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (true) {
+        when (current) {
+            is Activity -> return current
+            is android.content.ContextWrapper -> current = current.baseContext
+            else -> return null
+        }
     }
 }
 
@@ -179,7 +191,8 @@ private const val ExitFlick = 1400f
 @Composable
 fun rememberFullscreenSliders(): FullscreenSliders {
     val context = LocalContext.current
-    val sliders = remember(context) { FullscreenSliders(context) }
+    val playerWindow = LocalPlayerWindow.current
+    val sliders = remember(context, playerWindow) { FullscreenSliders(context, playerWindow) }
     DisposableEffect(sliders) { onDispose { sliders.releaseBrightness() } }
     // The pill fades a moment after the finger stops.
     LaunchedEffect(sliders.touchedAt, sliders.active) {

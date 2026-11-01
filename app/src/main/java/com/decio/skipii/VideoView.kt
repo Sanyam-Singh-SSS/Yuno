@@ -120,6 +120,8 @@ fun VideoContent(
     onInactiveTap: () -> Unit = {},
     /** Portrait: seam scrubber on the morphing stage (not a screen-fixed overlay). */
     portraitEdgeScrub: Boolean = false,
+    /** False while the picture still lives in the mini slot. Taking the view earlier blanks that slot. */
+    liveSurface: Boolean = true,
 ) {
     // Hidden until the video is tapped: opening the player (from the mini-player too) and
     // rotating in or out of fullscreen never pop the controls up.
@@ -302,14 +304,20 @@ fun VideoContent(
                     scaleY = 1f + 0.03f * n
                 },
             ) {
-                // Under the (transparent until it has a frame) TextureView, so opening or
-                // re-attaching never shows a black void.
-                Thumbnail(
-                    state.current?.thumbnail,
-                    Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
-                    radius = 0,
-                )
-                LocalVideoSurface.current(Modifier.fillMaxSize().hideStaleVideo(state))
+                // The captured frame sits under the live view. The poster is a
+                // different picture and flashed through whenever the view moved.
+                if (state.hidesStaleVideo || HeldFrame.image == null) {
+                    Thumbnail(
+                        state.current?.thumbnail,
+                        Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
+                        radius = 0,
+                    )
+                } else {
+                    HeldFrameImage(Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f })
+                }
+                if (liveSurface) {
+                    LocalVideoSurface.current(Modifier.fillMaxSize().hideStaleVideo(state))
+                }
                 if (scrubbing && scrubPreviewMs != null) {
                     ScrubVideoPreview(
                         state.current?.id,
@@ -753,10 +761,12 @@ fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .fullscreenGestures(sliders, onPull = { drag = it }, onSwipeDown = onExit)
-                .graphicsLayer {
-                    // A little give while dragging, so the gesture is visibly being heard.
-                    translationY = if (reduced) 0f else drag * 0.35f
-                },
+                .then(
+                    // A layer around the picture for the whole time it's fullscreen
+                    // stops the video using the screen's own plane, so it stutters.
+                    if (reduced || drag == 0f) Modifier
+                    else Modifier.graphicsLayer { translationY = drag * 0.35f },
+                ),
         )
         SliderLevel(sliders)
     }

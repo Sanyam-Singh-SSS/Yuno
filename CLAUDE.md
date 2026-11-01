@@ -164,7 +164,8 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   the emulator: 1080p ≈ 7 Mbps, a 60 s rewind played from memory (no re-download); audio only buffers a
   1-hour video whole (~48 MB). Forward each LoadControl method explicitly — Kotlin `by` skips Java default
   methods and Media3's old defaults throw "not implemented" (crashed the service on start).
-- 0.5.25 (2026-10-18): crash / force stop / swipe from Recents restores what was open. `SavedSession` +
+- 0.5.25 (2026-10-18): crash / force stop restores what was open. A swipe from Recents clears it
+  (`SavedSession.discard`, 2026-11-01) so the next launch has no video. `SavedSession` +
   `SessionSaver` (Resume.kt; service listener) persist [current, ...queue] (id, title, channel, thumbnail,
   duration) on every playlist change; closing the mini-player empties the playlist and so clears it. On a
   fresh service `PlayerState.restoreSession` sets the items paused at the `ResumeStore` position and does NOT

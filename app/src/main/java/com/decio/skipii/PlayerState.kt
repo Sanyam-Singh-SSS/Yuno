@@ -245,6 +245,8 @@ class PlayerState(private val scope: CoroutineScope) {
         .build()
 
     private fun startPlayback(item: VideoItem) {
+        // A Recents swipe discards the saved playlist. Opening a video starts keeping it again.
+        SavedSession.resumeSaving()
         val player = controller ?: run { pendingStart = item; return }
         // Pick up where this video was left off (ResumeStore; written by the service).
         replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
@@ -715,7 +717,7 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     /**
-     * Fresh service after a crash, force stop or swipe from Recents: put back what was open
+     * Fresh service after a crash or force stop: put back what was open
      * ([SavedSession]) as the mini-player, paused where it was left. Not prepared, so nothing
      * downloads until play (togglePlay / playFromQueue prepare an idle player).
      */
