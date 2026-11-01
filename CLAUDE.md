@@ -445,13 +445,10 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   in a plain Row: the last one (AMOLED) got only its padding's width and its label wrapped a letter a line. The row now
   scrolls like the SponsorBlock and theme rows, labels one line. Any row of chips scrolls (or wraps) — never a bare Row.
   Test: `adb shell settings put system font_scale 1.3` + `adb shell wm density 500` (back: 1.0 / `wm density reset`).
-- Themes = Ledgii's (2026-10-05): Wallpaper (default on 12+), Cream Rose, Erica, Lilac Air, Jai,
-  Pumpkin, Moonstone, Iris, Harbor + System/Light/Dark, picked in the account sheet's Appearance
-  card (`ThemeSettings`, persisted). Mode chips System / Light / Dark / AMOLED (2026-10-14): AMOLED = dark with
-  `ColorScheme.amoled()` (page pure black, containers pulled toward black but kept a step apart); use
-  `themedScheme`, not `schemeFor`, wherever a scheme is shown. Palettes in Theme.kt are copied verbatim from
-  ~/decio/ledgii/android/.../Theme.kt — re-copy on change; `completeLedgiiScheme` fills roles
-  Ledgii leaves unset. Tab bar is 62 dp (Derek; tabs keep 50 dp targets); the page has Ledgii's bottom vignette
+- Colors are BitChord's (2026-11-01): one dark scheme and one light scheme, no wallpaper
+  colors and no named palettes. Appearance is System / Light / Dark (`ThemeSettings.mode`,
+  persisted; an older AMOLED choice reads as Dark). The named roles match BitChord's Theme.kt
+  (white on black, black on white); container steps are those same grays. Tab bar is 62 dp (Derek; tabs keep 50 dp targets); the page has Ledgii's bottom vignette
   (130 dp + system bar, page color 0 → 76% on a smoothstep ramp so its top edge is invisible; `vignetteBrush`, shared with the top vignette) under the mini-player and tab bar.
 
 ## Binding UI rules (inherited from Castii)

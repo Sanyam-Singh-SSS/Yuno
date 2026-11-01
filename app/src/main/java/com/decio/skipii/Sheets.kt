@@ -524,12 +524,10 @@ private fun SettingSwitchRow(title: String, line: String, checked: Boolean, onCh
 
 // ── Appearance (inside the account sheet) ──────────────────────────────────────
 
-/** Light/dark/AMOLED mode plus every Ledgii theme (and wallpaper colors on Android 12+). */
+/** System, Light or Dark. An older AMOLED choice reads as Dark. */
 @Composable
 fun AppearanceSettings() {
     val c = MaterialTheme.colorScheme
-    val context = LocalContext.current
-    val dark = isDarkTheme()
     Column(Modifier.fillMaxWidth()) {
         Text("Appearance", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
         Spacer(Modifier.height(10.dp))
@@ -542,10 +540,8 @@ fun AppearanceSettings() {
             )
             Spacer(Modifier.height(14.dp))
         }
-        // Scrolls like the rows below: a fixed Row squeezed the last chip to its padding on a big
-        // font / display size, and its label wrapped a letter a line into a tall empty bar (#24).
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("system" to "System", "light" to "Light", "dark" to "Dark", "amoled" to "AMOLED").forEach { (key, label) ->
+            listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (key, label) ->
                 val on = ThemeSettings.mode == key
                 Box(
                     Modifier
@@ -554,45 +550,6 @@ fun AppearanceSettings() {
                         .background(if (on) c.secondaryContainer else c.surfaceContainerHighest)
                         .padding(horizontal = 16.dp, vertical = 9.dp),
                 ) { Text(label, color = if (on) c.onSecondaryContainer else c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false) }
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        val choices = buildList {
-            if (ThemeSettings.wallpaperAvailable) add(null to "Wallpaper")
-            SKIPII_THEMES.forEach { add(it.hex to it.name) }
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            choices.forEach { (hex, name) ->
-                val selected = ThemeSettings.seed?.lowercase() == hex?.lowercase()
-                val scheme = themedScheme(context, hex, dark)
-                Column(
-                    Modifier.width(78.dp).pressable { ThemeSettings.choose(hex) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        Modifier
-                            .size(56.dp)
-                            .clip(if (selected) CookieShape else CircleShape)
-                            .background(scheme.surface)
-                            .padding(5.dp)
-                            .clip(if (selected) CookieShape else CircleShape)
-                            .background(
-                                androidx.compose.ui.graphics.Brush.linearGradient(
-                                    0f to scheme.primary, 0.5f to scheme.primary,
-                                    0.5f to scheme.primaryContainer, 1f to scheme.primaryContainer,
-                                ),
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (selected) Icon(SfIcons.Check, "Selected", tint = scheme.onPrimary, modifier = Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        name, fontSize = 11.5.sp, maxLines = 1, softWrap = false,
-                        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                        color = if (selected) c.onSurface else c.onSurfaceVariant,
-                    )
-                }
             }
         }
     }
