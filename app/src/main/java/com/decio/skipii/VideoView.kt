@@ -39,20 +39,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.FastRewind
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FullscreenExit
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -112,6 +98,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import com.decio.skipii.icons.SfIcons
 
 /**
  * The video — shared by the portrait player and fullscreen. In fullscreen a tap toggles the
@@ -399,7 +386,7 @@ fun VideoContent(
                     }
                     if (pip?.supported == true) {
                         Spacer(Modifier.width(8.dp))
-                        GlassButton(Icons.Rounded.PictureInPictureAlt, "Picture-in-picture", enabled, size = 30.dp, iconSize = 18.dp) {
+                        GlassButton(SfIcons.Pip, "Picture-in-picture", enabled, size = 30.dp, iconSize = 18.dp) {
                             controlsVisible = false
                             if (!pip.enter(state.videoAspect)) state.actionMessage = "Picture-in-picture is turned off for Skipii in Settings."
                         }
@@ -411,7 +398,7 @@ fun VideoContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val skip = if (fullscreen) 56.dp else 48.dp
-                    GlassButton(Icons.Rounded.Replay10, "Back 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
+                    GlassButton(SfIcons.Replay10, "Back 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
                         touched(); state.seekBy(-10_000)
                     }
                     MorphPlayButton(
@@ -423,7 +410,7 @@ fun VideoContent(
                         content = Color.White,
                         enabled = enabled,
                     ) { touched(); state.togglePlay() }
-                    GlassButton(Icons.Rounded.Forward10, "Forward 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
+                    GlassButton(SfIcons.Forward10, "Forward 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
                         touched(); state.seekBy(10_000)
                     }
                 }
@@ -453,7 +440,7 @@ fun VideoContent(
                             Spacer(Modifier.width(6.dp))
                         }
                         GlassButton(
-                            if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                            if (fullscreen) SfIcons.FullscreenExit else SfIcons.Fullscreen,
                             if (fullscreen) "Exit fullscreen" else "Fullscreen",
                             enabled,
                             size = 34.dp,
@@ -606,7 +593,7 @@ fun AudioOnlyStage(
                 fun Modifier.slide(side: Int) = graphicsLayer {
                     translationX = -side * (1f - gather()) * (gap + (play + skip) / 2).toPx()
                 }
-                Box(Modifier.slide(-1)) { TonalSkip(Icons.Rounded.Replay10, "Back 10 seconds", interactive, skip) { state.seekBy(-10_000) } }
+                Box(Modifier.slide(-1)) { TonalSkip(SfIcons.Replay10, "Back 10 seconds", interactive, skip) { state.seekBy(-10_000) } }
                 Box(Modifier.graphicsLayer { val k = lerpF(0.6f, 1f, gather()); scaleX = k; scaleY = k }) {
                     MorphPlayButton(
                         playing = state.isPlaying,
@@ -617,7 +604,7 @@ fun AudioOnlyStage(
                         enabled = interactive,
                     ) { state.togglePlay() }
                 }
-                Box(Modifier.slide(1)) { TonalSkip(Icons.Rounded.Forward10, "Forward 10 seconds", interactive, skip) { state.seekBy(10_000) } }
+                Box(Modifier.slide(1)) { TonalSkip(SfIcons.Forward10, "Forward 10 seconds", interactive, skip) { state.seekBy(10_000) } }
             }
             // Same place and padding as the video's bottom bar (its row is the fullscreen button's 34 dp).
             Column(
@@ -756,7 +743,7 @@ private fun SkipSegmentPill(segment: SponsorBlock.Segment, enabled: Boolean, mod
     ) {
         val ink = if (segment.category.color.luminance() > 0.45f) Color(0xFF151515) else Color.White
         Text("Skip ${segment.category.short}", color = ink, fontSize = 12.sp, fontWeight = FontWeight.Black)
-        Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = Modifier.size(18.dp))
+        Icon(SfIcons.SkipNext, null, tint = ink, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -851,7 +838,7 @@ private fun QualityRow(title: String, subtitle: String?, selected: Boolean, onCl
                 Text(subtitle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (selected) c.onPrimaryContainer.copy(alpha = 0.75f) else c.onSurfaceVariant)
             }
         }
-        if (selected) Icon(Icons.Rounded.Check, "Selected", tint = c.onPrimaryContainer)
+        if (selected) Icon(SfIcons.Check, "Selected", tint = c.onPrimaryContainer)
     }
 }
 
@@ -862,7 +849,7 @@ private fun BoxScope.ErrorPanel(message: String, onRetry: () -> Unit, onCollapse
         Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Rounded.ErrorOutline, null, tint = Color.White, modifier = Modifier.size(28.dp))
+        Icon(SfIcons.ErrorOutline, null, tint = Color.White, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(8.dp))
         Text(message, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp)
         Spacer(Modifier.height(12.dp))
@@ -966,7 +953,7 @@ private fun SeekBurstPill(side: Int, seconds: Int, taps: Int, active: Boolean, f
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (side < 0) Icons.Rounded.FastRewind else Icons.Rounded.FastForward,
+            if (side < 0) SfIcons.FastRewind else SfIcons.FastForward,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier
@@ -1013,7 +1000,7 @@ fun MorphPlayButton(
             CircularProgressIndicator(color = content, strokeWidth = 3.dp, modifier = Modifier.size(size * 0.42f))
         } else {
             Icon(
-                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                if (playing) SfIcons.Pause else SfIcons.Play,
                 if (playing) "Pause" else "Play",
                 tint = content,
                 modifier = Modifier.size(size * 0.46f),

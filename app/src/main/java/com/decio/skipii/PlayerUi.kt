@@ -39,17 +39,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ThumbDown
-import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material.icons.outlined.WatchLater
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.LibraryAdd
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.ThumbDown
-import androidx.compose.material.icons.rounded.ThumbUp
-import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -93,6 +82,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import com.decio.skipii.icons.BitChordIcons
+import com.decio.skipii.icons.SfIcons
 
 // ── Geometry shared with the morph (MainActivity builds MorphGeometry from these) ──
 
@@ -538,7 +529,7 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (subscribed) {
-            FlourishIcon(Icons.Rounded.NotificationsActive, null, active = subscribed, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 18.dp)
+            FlourishIcon(SfIcons.Notifications, null, active = subscribed, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 18.dp)
             Spacer(Modifier.width(6.dp))
         }
         Text(
@@ -569,7 +560,7 @@ private fun PlayerActions(state: PlayerState) {
         val context = LocalContext.current
         val item = state.current
         ActionPill(
-            icon = Icons.Rounded.Share,
+            icon = SfIcons.Share,
             label = "Share",
             active = false,
             flourish = null,
@@ -598,7 +589,7 @@ private fun AccountActions(state: PlayerState) {
     SideEffect { lastLikes = likes }
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         ActionPill(
-            icon = if (like == LikeStatus.Like) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+            icon = if (like == LikeStatus.Like) SfIcons.ThumbUpFill else SfIcons.ThumbUp,
             label = likes.takeIf { it > 0 }?.let { formatCount(it) },
             active = like == LikeStatus.Like,
             flourish = Flourish.Pop,
@@ -607,7 +598,7 @@ private fun AccountActions(state: PlayerState) {
             description = "Like",
         ) { state.setLike(LikeStatus.Like) }
         ActionPill(
-            icon = if (like == LikeStatus.Dislike) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
+            icon = if (like == LikeStatus.Dislike) SfIcons.ThumbDownFill else SfIcons.ThumbDown,
             label = null,
             active = like == LikeStatus.Dislike,
             flourish = Flourish.Droop,
@@ -616,7 +607,7 @@ private fun AccountActions(state: PlayerState) {
         ) { state.setLike(LikeStatus.Dislike) }
     }
     ActionPill(
-        icon = if (state.inWatchLater) Icons.Rounded.WatchLater else Icons.Outlined.WatchLater,
+        icon = if (state.inWatchLater) SfIcons.Clock else BitChordIcons.Clock,
         label = if (state.inWatchLater) "Saved" else "Save",
         active = state.inWatchLater,
         flourish = Flourish.Drop,
@@ -625,7 +616,7 @@ private fun AccountActions(state: PlayerState) {
     ) { state.toggleWatchLater() }
     // Any of the account's playlists (GitHub issue #12).
     ActionPill(
-        icon = Icons.Rounded.LibraryAdd,
+        icon = SfIcons.LibraryAdd,
         label = "Playlist",
         active = false,
         flourish = null,
@@ -752,7 +743,7 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
                 onClick = state::togglePlay,
             )
             Box(Modifier.size(40.dp).pressable(enabled = interactive, onClick = state::close), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Close", tint = c.onSurfaceVariant)
+                Icon(SfIcons.Close, "Close", tint = c.onSurfaceVariant)
             }
         }
         val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f

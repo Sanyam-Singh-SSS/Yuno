@@ -64,15 +64,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.SlowMotionVideo
-import androidx.compose.material.icons.outlined.Subscriptions
-import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.SlowMotionVideo
-import androidx.compose.material.icons.rounded.Subscriptions
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -102,12 +93,22 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import com.decio.skipii.backdrop.backdrops.layerBackdrop
+import com.decio.skipii.backdrop.backdrops.rememberLayerBackdrop
+import com.decio.skipii.floatingtabbar.rememberFloatingTabBarScrollConnection
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import com.decio.skipii.icons.BitChordIcons
+import com.decio.skipii.icons.SfIcons
 
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -153,12 +154,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
-    Home("Home", Icons.Outlined.Home, Icons.Rounded.Home),
-    Shorts("Shorts", Icons.Outlined.SlowMotionVideo, Icons.Rounded.SlowMotionVideo),
-    Subscriptions("Subscriptions", Icons.Outlined.Subscriptions, Icons.Rounded.Subscriptions),
-    Library("Library", Icons.Outlined.VideoLibrary, Icons.Rounded.VideoLibrary),
+/**
+ * The four tabs. Each glyph fills a different share of its box - [BitChordIcons.Home]
+ * covers about half of it, while the SF Symbols and BitChord's font-drawn
+ * [BitChordIcons.TabLibrary] cover three quarters - so [iconScale] shrinks the
+ * other three to Home's optical area instead of letting them run to the edges.
+ */
+enum class Tab(val label: String, val icon: ImageVector, val iconScale: Float = 1f) {
+    Home("Home", BitChordIcons.Home),
+    Shorts("Shorts", SfIcons.Shorts, 0.85f),
+    Subscriptions("Subscriptions", SfIcons.Subscriptions, 1.08f),
+    Library("Library", BitChordIcons.TabLibrary, 0.84f),
 }
+
+/** Backdrop the nav samples for liquid glass. */
+internal val LocalAppHaze = staticCompositionLocalOf<HazeState?> { null }
 
 // The mini-player floats 8 dp above the nav pill (NavBar.kt), capped at 368 dp, centered.
 private val MiniWidth = 368.dp
@@ -247,10 +257,14 @@ fun SkipiiApp() {
         if (WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding() > 0.dp) 10.dp else 0.dp
     var optionsFor by remember { mutableStateOf<VideoItem?>(null) }
     // On Shorts the app's video waits, paused, out of sight (no mini-player).
-    val hasMini = player.current != null && tab != Tab.Shorts
+    val glassOn = LiquidGlassSetting.enabled && isGlassSupported()
+    val hasMini = player.current != null && tab != Tab.Shorts && !glassOn
     // Lists scroll fully clear of the floating nav (and mini-player when present).
     val contentPadding = PaddingValues(
-        bottom = stackBottom + NavHeight + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 16.dp,
+        bottom = stackBottom + NavHeight +
+            (if (hasMini) MiniHeight + MiniGap else 0.dp) +
+            (if (glassOn && player.current != null && tab != Tab.Shorts) 56.dp else 0.dp) +
+            16.dp,
     )
 
     // Fullscreen is whenever the open player is shown in landscape (rotation or button).
@@ -348,6 +362,19 @@ fun SkipiiApp() {
     SideEffect { shorts.cover(tab == Tab.Shorts && openChannel != null) }
     BackHandler(enabled = tab == Tab.Shorts && shorts.channelMenu) { shorts.channelMenu = false }
 
+    val hazeState = remember { HazeState() }
+    val navScroll = rememberFloatingTabBarScrollConnection()
+    val windowBackground = c.surface
+    val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
+        {
+            drawRect(windowBackground)
+            drawContent()
+        }
+    }
+    val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
+    val pageSample = Modifier
+        .hazeSource(hazeState)
+        .then(if (glassOn) Modifier.layerBackdrop(appBackdrop).nestedScroll(navScroll) else Modifier)
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
         val stageFloor = maxOf(StageMinAspect, constraints.maxWidth / (constraints.maxHeight * StageMaxHeightShare))
         SideEffect { player.stageFloor = stageFloor }
@@ -392,6 +419,9 @@ fun SkipiiApp() {
             LocalPictureInPicture provides pip,
             LocalVideoMenu provides { optionsFor = it },
             LocalChannelOpener provides { url -> showChannel(url) },
+            LocalAppHaze provides hazeState,
+            LocalLiquidGlassEnabled provides glassOn,
+            LocalAppBackdrop provides appBackdrop,
         ) {
         AnimatedContent(
             targetState = tab,
@@ -401,6 +431,7 @@ fun SkipiiApp() {
                     slideInVertically(tween(Motion.PageRiseMs, easing = Motion.Emphasized)) { (it / 35).coerceIn(8, 24) }) togetherWith
                     fadeOut(tween(Motion.PageExitMs))
             },
+            modifier = pageSample,
             label = "tabs",
         ) { t ->
             when (t) {
@@ -586,42 +617,57 @@ fun SkipiiApp() {
                 },
             )
         }
-        NavPill(
-            selected = tab,
-            onSelect = { selected ->
-                when {
-                    // Re-tapping the current tab: back out of a playlist, else scroll to top.
-                    selected == tab && openSearch -> openSearch = false
-                    selected == tab && openChannel != null -> openChannel = null
-                    selected == tab && openPlaylist != null -> openPlaylist = null
-                    selected == tab && openAllSubscriptions -> openAllSubscriptions = false
-                    selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
-                    else -> {
-                        if (selected == Tab.Shorts) shortsFrom = tab
-                        openPlaylist = null
-                        openChannel = null
-                        openAllSubscriptions = false
-                        openSearch = false
-                        tab = selected
-                    }
+        val onSelectTab: (Tab) -> Unit = { selected ->
+            when {
+                selected == tab && openSearch -> openSearch = false
+                selected == tab && openChannel != null -> openChannel = null
+                selected == tab && openPlaylist != null -> openPlaylist = null
+                selected == tab && openAllSubscriptions -> openAllSubscriptions = false
+                selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
+                else -> {
+                    if (selected == Tab.Shorts) shortsFrom = tab
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = selected
                 }
-            },
-            player = player,
-            morph = morph,
-            controlsActive = player.current != null && (player.expanded || morph.dragging),
-            bar = playerBar,
-            onFullscreen = { toggleFullscreen() },
-            shorts = { shortsMorph.value },
-            tabsEnabled = !shortsShown,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(start = 16.dp, end = 16.dp, bottom = stackBottom)
-                .graphicsLayer {
-                    // Moved fully off screen, so it can't catch touches meant for the composer.
-                    translationY = barAside * (NavHeight + PlayerBarRaise + stackBottom + 24.dp).toPx()
-                    alpha = 1f - barAside
-                },
-        )
+            }
+        }
+        val shownTabs = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
+        val glassChrome = glassOn && !playerOpen && !shortsShown
+        if (glassChrome) {
+            GlassNavBar(
+                tabs = shownTabs,
+                selected = tab,
+                onTabSelected = onSelectTab,
+                scrollConnection = navScroll,
+                player = player,
+                onExpandPlayer = { player.expanded = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom),
+            )
+        } else {
+            NavPill(
+                selected = tab,
+                onSelect = onSelectTab,
+                player = player,
+                morph = morph,
+                controlsActive = player.current != null && (player.expanded || morph.dragging),
+                bar = playerBar,
+                onFullscreen = { toggleFullscreen() },
+                shorts = { shortsMorph.value },
+                tabsEnabled = !shortsShown,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom)
+                    .graphicsLayer {
+                        translationY = barAside * (NavHeight + PlayerBarRaise + stackBottom + 24.dp).toPx()
+                        alpha = 1f - barAside
+                    },
+            )
+        }
 
         // The tab bar's Shorts form: ‹ and the glass pill, out of the tab bar's own spot. It steps
         // down out of the way of the comments panel (its composer sits there), as the player's bar does.

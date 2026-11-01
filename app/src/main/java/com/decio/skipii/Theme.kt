@@ -62,6 +62,42 @@ val RoundedHeavy = FontFamily(
     Font(DeviceFontFamilyName("sans-serif"), weight = FontWeight.Bold),
 )
 
+/**
+ * SF Pro Display, the face BitChord ships as its default, with BitChord's own
+ * weight mapping (Theme.kt there): the regular file carries W400 and W500, the
+ * medium cut W600, semibold W700 and bold W800. The five OTFs are the exact
+ * files BitChord bundles, so type lines up cut for cut.
+ */
+val SfProDisplay = FontFamily(
+    Font(R.font.sf_pro_display_regular, FontWeight.W400),
+    Font(R.font.sf_pro_display_regular, FontWeight.W500),
+    Font(R.font.sf_pro_display_medium, FontWeight.W600),
+    Font(R.font.sf_pro_display_semibold, FontWeight.W700),
+    Font(R.font.sf_pro_display_bold, FontWeight.W800),
+)
+
+/** Applies [family] to every style in the scale, as BitChord's `withFamily` does. */
+private fun Typography.withFamily(family: FontFamily) = Typography(
+    displayLarge = displayLarge.copy(fontFamily = family),
+    displayMedium = displayMedium.copy(fontFamily = family),
+    displaySmall = displaySmall.copy(fontFamily = family),
+    headlineLarge = headlineLarge.copy(fontFamily = family),
+    headlineMedium = headlineMedium.copy(fontFamily = family),
+    headlineSmall = headlineSmall.copy(fontFamily = family),
+    titleLarge = titleLarge.copy(fontFamily = family),
+    titleMedium = titleMedium.copy(fontFamily = family),
+    titleSmall = titleSmall.copy(fontFamily = family),
+    bodyLarge = bodyLarge.copy(fontFamily = family),
+    bodyMedium = bodyMedium.copy(fontFamily = family),
+    bodySmall = bodySmall.copy(fontFamily = family),
+    labelLarge = labelLarge.copy(fontFamily = family),
+    labelMedium = labelMedium.copy(fontFamily = family),
+    labelSmall = labelSmall.copy(fontFamily = family),
+)
+
+/** The default type scale, drawn in SF Pro Display rather than the system face. */
+private val AppTypography = Typography().withFamily(SfProDisplay)
+
 // ── Themes ported from Ledgii (2026-10-05) ────────────────────────────────────
 // Everything from hexToHsl down to the end of seedScheme is copied verbatim from
 // ~/decio/ledgii/android/.../Theme.kt so a theme looks identical in both apps. If a
@@ -548,7 +584,7 @@ fun SkipiiTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val scheme = themedScheme(context, ThemeSettings.seed, dark)
     SystemBars(dark, scheme.surface)
-    MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = Typography()) {
+    MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = AppTypography) {
         CompositionLocalProvider(
             // No tap ripples anywhere: press feedback is the scale-down from Motion.kt.
             LocalRippleConfiguration provides null,

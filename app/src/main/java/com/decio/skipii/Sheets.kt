@@ -36,14 +36,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.rounded.ClearAll
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.PlaylistPlay
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -69,8 +61,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
@@ -89,6 +79,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import android.view.inputmethod.InputMethodManager
+import com.decio.skipii.icons.SfIcons
 
 // ── Long-press options ─────────────────────────────────────────────────────────
 
@@ -110,13 +101,13 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
                 Text(video.channel, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
             }
         }
-        OptionRow(Icons.Rounded.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
-        OptionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
+        OptionRow(SfIcons.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
+        OptionRow(SfIcons.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
         if (Account.signedIn) {
-            OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
-            OptionRow(Icons.Rounded.LibraryAdd, "Save to playlist") { onDismiss(); player.openPlaylists(video) }
+            OptionRow(SfIcons.Clock, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
+            OptionRow(SfIcons.LibraryAdd, "Save to playlist") { onDismiss(); player.openPlaylists(video) }
         }
-        OptionRow(Icons.Rounded.Share, "Share") {
+        OptionRow(SfIcons.Share, "Share") {
             shareLink(context, "https://youtu.be/${video.id}", video.title)
             onDismiss()
         }
@@ -181,7 +172,7 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
         Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(if (choice.id == "WL") Icons.Rounded.WatchLater else Icons.Rounded.PlaylistPlay, null, tint = c.onSurface)
+        Icon(if (choice.id == "WL") SfIcons.Clock else SfIcons.PlaylistPlay, null, tint = c.onSurface)
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f)) {
             Text(choice.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -193,7 +184,7 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
             Modifier.size(26.dp).clip(CircleShape).background(if (on) c.primary else c.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
         ) {
-            if (on) Icon(Icons.Rounded.Check, "Saved", tint = c.onPrimary, modifier = Modifier.size(18.dp))
+            if (on) Icon(SfIcons.Check, "Saved", tint = c.onPrimary, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -210,7 +201,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
     val c = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }
     if (!open) {
-        OptionRow(Icons.Rounded.Add, "New playlist") { open = true }
+        OptionRow(SfIcons.Add, "New playlist") { open = true }
         return
     }
     var title by remember { mutableStateOf("") }
@@ -344,7 +335,7 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
                     .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.ClearAll, null, tint = c.onSecondary, modifier = Modifier.size(18.dp))
+                Icon(SfIcons.ClearAll, null, tint = c.onSecondary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Clear", color = c.onSecondary, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             }
@@ -402,7 +393,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                             Box(Modifier.padding(horizontal = 20.dp)) {
                                 VideoRow(video, onClick = { player.playFromQueue(index); onDismiss() }) {
                                     Box(Modifier.size(40.dp).pressable { player.removeFromQueue(index) }, contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Rounded.Close, "Remove from queue", tint = c.onSurfaceVariant)
+                                        Icon(SfIcons.Close, "Remove from queue", tint = c.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -548,6 +539,15 @@ fun AppearanceSettings() {
     Column(Modifier.fillMaxWidth()) {
         Text("Appearance", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
         Spacer(Modifier.height(10.dp))
+        if (isGlassSupported()) {
+            SettingSwitchRow(
+                "Liquid Glass",
+                "Frosted, refractive bar that samples the page behind it",
+                LiquidGlassSetting.enabled,
+                LiquidGlassSetting::set,
+            )
+            Spacer(Modifier.height(14.dp))
+        }
         // Scrolls like the rows below: a fixed Row squeezed the last chip to its padding on a big
         // font / display size, and its label wrapped a letter a line into a tall empty bar (#24).
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -590,7 +590,7 @@ fun AppearanceSettings() {
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected) Icon(Icons.Rounded.Check, "Selected", tint = scheme.onPrimary, modifier = Modifier.size(22.dp))
+                        if (selected) Icon(SfIcons.Check, "Selected", tint = scheme.onPrimary, modifier = Modifier.size(22.dp))
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(

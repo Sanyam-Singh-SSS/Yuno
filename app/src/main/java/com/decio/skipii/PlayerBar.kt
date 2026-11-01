@@ -50,17 +50,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.outlined.Headphones
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -112,6 +101,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import com.decio.skipii.icons.SfIcons
 
 // The open player's bar holds the playback controls (Derek, 2026-10-25: mockup A "Key" in
 // docs/design/player-bar-bloom.html). At rest: audio only · −10 · play · +10 · ⋮, play dead centre.
@@ -551,7 +541,7 @@ internal fun BarKey(bar: PlayerBarState, enabled: Boolean, modifier: Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.Rounded.MoreVert, "More controls", tint = c.onSurface,
+            SfIcons.More, "More controls", tint = c.onSurface,
             modifier = Modifier.size(21.dp).graphicsLayer {
                 val t = open()
                 alpha = 1f - t
@@ -560,7 +550,7 @@ internal fun BarKey(bar: PlayerBarState, enabled: Boolean, modifier: Modifier) {
             },
         )
         Icon(
-            Icons.Rounded.Close, "Close", tint = c.onSurface,
+            SfIcons.Close, "Close", tint = c.onSurface,
             modifier = Modifier.size(21.dp).graphicsLayer {
                 val t = open()
                 alpha = t
@@ -590,7 +580,7 @@ internal fun BarAudioOnly(player: PlayerState, enabled: Boolean, modifier: Modif
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (on) Icons.Rounded.Headphones else Icons.Outlined.Headphones,
+            if (on) SfIcons.Headphones else SfIcons.Headphones,
             if (on) "Audio only is on" else "Audio only",
             tint = if (on) c.onPrimary else c.onSurface, modifier = Modifier.size(19.dp),
         )
@@ -639,7 +629,7 @@ internal fun BarCard(bar: PlayerBarState, player: PlayerState, gate: () -> Float
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (chapters) {
-                    Icon(Icons.AutoMirrored.Rounded.List, null, tint = c.onSurface, modifier = Modifier.size(18.dp))
+                    Icon(SfIcons.List, null, tint = c.onSurface, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                 }
                 player.chapterAt(player.positionMs)?.let {
@@ -655,7 +645,7 @@ internal fun BarCard(bar: PlayerBarState, player: PlayerState, gate: () -> Float
                 )
                 if (chapters) {
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Rounded.ExpandLess, "Chapters", tint = c.onSurface, modifier = Modifier.size(20.dp))
+                    Icon(SfIcons.ChevronUp, "Chapters", tint = c.onSurface, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -680,9 +670,9 @@ internal fun BarCard(bar: PlayerBarState, player: PlayerState, gate: () -> Float
                         when (tool) {
                             BarTool.Speed -> Text(PlaybackSpeed.label(player.speed) + "×", color = ink, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.height(21.dp))
                             BarTool.Quality -> Text(QualityPreference.height?.let { "${it}p" } ?: "Auto", color = ink, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.height(21.dp))
-                            BarTool.Pip -> Icon(Icons.Rounded.PictureInPictureAlt, null, tint = ink, modifier = glyph)
-                            BarTool.Fullscreen -> Icon(Icons.Rounded.Fullscreen, null, tint = ink, modifier = glyph)
-                            BarTool.Next -> Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = glyph)
+                            BarTool.Pip -> Icon(SfIcons.Pip, null, tint = ink, modifier = glyph)
+                            BarTool.Fullscreen -> Icon(SfIcons.Fullscreen, null, tint = ink, modifier = glyph)
+                            BarTool.Next -> Icon(SfIcons.SkipNext, null, tint = ink, modifier = glyph)
                         }
                         Text(
                             when (tool) {
@@ -929,7 +919,7 @@ private fun BarQualityList(bar: PlayerBarState, player: PlayerState, gate: () ->
                     }
                     Spacer(Modifier.weight(1f))
                     Icon(
-                        Icons.Rounded.Check, if (selected) "Selected" else null, tint = c.onPrimary,
+                        SfIcons.Check, if (selected) "Selected" else null, tint = c.onPrimary,
                         modifier = Modifier.size(20.dp).graphicsLayer { alpha = if (selected) 1f else 0f },
                     )
                 }
@@ -1241,7 +1231,7 @@ internal fun ScrubOverlay(bar: PlayerBarState, player: PlayerState, sheets: Stor
             .padding(start = 14.dp, end = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Close, null, tint = ink, modifier = Modifier.size(20.dp))
+        Icon(SfIcons.Close, null, tint = ink, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
         Text("Cancel", color = ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
     }

@@ -17,9 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.Page
+import com.decio.skipii.icons.SfIcons
 
 /** Opens a channel page from anywhere (player channel row, card avatars). Provided by the shell. */
 val LocalChannelOpener = staticCompositionLocalOf<(String) -> Unit> { {} }
@@ -143,7 +141,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
         val d = state.details
         when {
             d == null && state.error != null -> Box(Modifier.padding(top = top)) { EmptyState(
-                Icons.Rounded.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
+                SfIcons.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
                 action = { PillButton("Try again", state::load) },
             ) }
             d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
@@ -208,7 +206,7 @@ private fun ChannelSubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (subscribed) {
-            FlourishIcon(Icons.Rounded.NotificationsActive, null, active = true, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 18.dp)
+            FlourishIcon(SfIcons.Notifications, null, active = true, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 18.dp)
             Spacer(Modifier.width(6.dp))
         }
         Text(if (subscribed) "Subscribed" else "Subscribe", color = if (subscribed) c.onSecondaryContainer else c.surface, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)

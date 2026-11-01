@@ -1,25 +1,25 @@
 package com.decio.skipii
 
+import android.os.Build
 import android.view.HapticFeedbackConstants
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -33,12 +33,18 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -83,8 +89,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -93,23 +101,40 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import com.decio.skipii.icons.SfIcons
 
-// Castii's floating stack: a nav pill capped at 328 dp, the mini-player 8 dp above it.
-// 62 dp (Derek, 2026-10-05): between Castii's 56 and Ledgii's 78. Tabs keep 50 dp targets.
+// BitChord-style floating capsule: full width minus gutters, every tab shows its label.
+// Mini-player still sits 8 dp above it. Height stays 62 dp so the player morph is unchanged.
 internal val NavHeight = 62.dp
-internal val NavWidth = 328.dp
-// 0.5.50: five tabs (Shorts); the active pill keeps about the width it had among four.
-// "Subscriptions" is much longer than Home/Shorts/Library, so it gets extra weight or the
-// label hugs the pill edges and sits too close to its neighbours. Shorts off → four tabs.
-private fun selectedTabWeight(tabs: Int, selected: Tab): Float {
-    val long = selected == Tab.Subscriptions
-    return when {
-        tabs > 4 && long -> 4.8f
-        tabs > 4 -> 3.5f
-        long -> 3.0f
-        else -> 2.2f
-    }
-}
+internal val NavWidth = 400.dp
+/** Side margin of the resting tab bar, matching BitChord's 19 dp. */
+internal val NavBarGutter = 19.dp
+private val TabPillInset = 4.dp
+// BitChord's tab sizing (FloatingBottomBar.kt): 28 dp glyphs with 6.5 dp of tab
+// padding, which comes to the same 62 dp bar in both bars.
+private val TabIconSize = 28.dp
+private val TabIconLabelGap = 1.dp
+private val TabVerticalPadding = 6.5.dp
+private val TabRowGap = 6.dp
+
+/**
+ * A tab's label, set exactly as BitChord's `tabLabelStyle()`: 10sp W600 with
+ * 0.5 tracking. BitChord's type scale leaves `lineHeight` unspecified, so the
+ * line is the font's own (~1.2×) rather than Material's 16–24sp; that is what
+ * keeps its bar 62 dp instead of growing taller around the text.
+ */
+@Composable
+internal fun tabLabelStyle(): TextStyle =
+    MaterialTheme.typography.labelSmall.copy(
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp,
+        lineHeight = TextUnit.Unspecified,
+    )
+/** How far the selection pill stretches along its travel. */
+private const val PillStretch = 0.16f
+private const val PillSquash = 0.5f
+internal val GlassSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
 // The open player's bar is compact (Derek, 2026-10-19: play pill ~60% of its first 161 dp,
 // the ±10 buttons tight beside it): it narrows from the tab bar's width as the player opens.
 // 0.5.32 (Derek, 2026-10-25: mockup A "Lift" in docs/design/player-bar-reach.html): a size up
@@ -121,9 +146,7 @@ private fun selectedTabWeight(tabs: Int, selected: Tab): Float {
 internal val PlaySlotWidth = 102.dp
 internal val SeekSlotWidth = 51.dp
 internal val BarPadding = 6.dp
-/** The open player's own inset (the tabs keep [BarPadding]). */
 internal val PlayerBarPadding = 5.dp
-private val BarGap = 4.dp
 internal val PlayerBarGap = 5.dp
 internal val CompactBarWidth = PlayerBarPadding * 2 + SideSlotWidth * 2 + SeekSlotWidth * 2 + PlaySlotWidth + PlayerBarGap * 4
 // 0.5.37 (Derek): 10% taller (row 67) and, under it, the progress hairline's 8 dp (mockup A "Inside" in
@@ -217,8 +240,9 @@ internal fun NavPill(
     val playInteraction = remember { MutableInteractionSource() }
     val playPressed by playInteraction.collectIsPressedAsState()
     val playScale = animateFloatAsState(if (playPressed && !reduced) 0.94f else 1f, spring(dampingRatio = 0.6f, stiffness = 1400f), label = "playPress")
+    val glassOn = LocalLiquidGlassEnabled.current && isGlassSupported()
 
-    Box(modifier.widthIn(max = NavWidth).height(NavHeight).fillMaxWidth().onPlaced { anchors.outer = it }) {
+    Box(modifier.fillMaxWidth().height(NavHeight).onPlaced { anchors.outer = it }) {
         Box(
             modifier = Modifier
                 // Narrows to the compact player bar around its centre and grows upward to the
@@ -253,11 +277,12 @@ internal fun NavPill(
                         playerBarScrubLift(bar, barGate(p))
                     shape = playerBarShape(bar, size, barGate(p))
                     clip = true
-                    shadowElevation = playerBarElevation(bar, barGate(p)) * (1f - shortsBarFade(shorts()))
+                    shadowElevation = if (glassOn) 0f else playerBarElevation(bar, barGate(p)) * (1f - shortsBarFade(shorts()))
                     ambientShadowColor = Color.Black
                     spotShadowColor = Color.Black
+                    alpha = 1f - shortsBarFade(shorts())
                 }
-                .drawBehind { drawRect(c.surfaceVariant, alpha = 1f - shortsBarFade(shorts())) }
+                .navBarSurface(c.surfaceVariant, morph)
                 .playerBarGestures(bar, player, enabled = controlsActive, view = view, gate = gate, onPick = onPick),
         ) {
           CompositionLocalProvider(LocalContentColor provides c.onSurfaceVariant) {
@@ -286,88 +311,16 @@ internal fun NavPill(
                         drawRoundRect(c.primary, rect.topLeft, rect.size, CornerRadius(rect.height / 2f), alpha = shown)
                     },
             ) {
-                // ── Tabs ── (kept at the full width, centred, while the bar narrows under them)
-                Row(
-                    Modifier
-                        .fillMaxSize()
-                        .layout { measurable, constraints ->
-                            val full = anchors.fullWidth.coerceAtLeast(constraints.maxWidth)
-                            val tabs = measurable.measure(Constraints.fixed(full, constraints.maxHeight))
-                            layout(constraints.maxWidth, constraints.maxHeight) { tabs.place((constraints.maxWidth - full) / 2, 0) }
-                        }
-                        .padding(BarPadding),
-                    horizontalArrangement = Arrangement.spacedBy(BarGap),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val shown = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
-                    shown.forEachIndexed { i, t ->
-                        val active = t == selected
-                        val spec = if (reduced) snap<Float>() else tween(260, easing = Motion.Emphasized)
-                        val labelColor by animateColorAsState(
-                            if (active) c.onPrimary else c.onSurfaceVariant,
-                            if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabContent",
-                        )
-                        // Fade the pill by alpha of the same color (never toward Color.Transparent).
-                        val pillColor by animateColorAsState(
-                            // Full primary (not the pale container tone) so the selected tab stands
-                            // out clearly against the bar in light and dark (Derek, 2026-10-05).
-                            if (active) c.primary else c.primary.copy(alpha = 0f),
-                            if (reduced) snap() else tween(220, easing = Motion.Emphasized), label = "tabPill",
-                        )
-                        val weight by animateFloatAsState(
-                            if (active) selectedTabWeight(shown.size, t) else 1f,
-                            spec,
-                            label = "tabWeight",
-                        )
-                        val interaction = remember(t) { MutableInteractionSource() }
-                        Box(
-                            Modifier
-                                .weight(weight.coerceAtLeast(0.75f))
-                                .height(50.dp)
-                                .onPlaced { anchors.tabs[t.ordinal] = it }
-                                .graphicsLayer {
-                                    val k = ramp(morph.progress.value, i * TabExitStagger, TabExitSpan + i * TabExitStagger)
-                                    // Into Shorts: Home fades where ‹ appears, the rest drop out left to right.
-                                    val sp = shorts()
-                                    val d = shortsTabDrop(sp, i)
-                                    alpha = (1f - k) * (if (i == 0) 1f - shortsHomeFade(sp) else 1f - d)
-                                    translationY = 14.dp.toPx() * k + 16.dp.toPx() * d
-                                    scaleX = (1f - 0.4f * k) * (1f - 0.15f * d)
-                                    scaleY = scaleX
-                                }
-                                // While the player owns the bar there's no click handler at all,
-                                // so touches reach the player buttons above.
-                                .then(
-                                    if (controlsActive || !tabsEnabled) Modifier else Modifier.clickable(interactionSource = interaction, indication = null) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                                        onSelect(t)
-                                    },
-                                )
-                                .drawBehind {
-                                    if (morph.progress.value <= 0f) drawRoundRect(pillColor, cornerRadius = CornerRadius(size.height / 2f))
-                                },
-                        ) {
-                            CompositionLocalProvider(LocalContentColor provides labelColor) {
-                                // Side inset so the label doesn't sit flush on the pill (Subscriptions
-                                // was especially tight against its neighbours).
-                                Row(
-                                    Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(if (active) t.selectedIcon else t.icon, contentDescription = t.label, modifier = Modifier.size(22.dp))
-                                    AnimatedVisibility(
-                                        visible = active,
-                                        enter = if (reduced) fadeIn(snap()) else fadeIn(tween(160, easing = Motion.Emphasized)) + expandHorizontally(tween(200, easing = Motion.Emphasized)),
-                                        exit = if (reduced) fadeOut(snap()) else fadeOut(tween(90)) + shrinkHorizontally(tween(160, easing = Motion.Emphasized)),
-                                    ) {
-                                        Text(t.label, modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                GlassTabRow(
+                    selected = selected,
+                    onSelect = onSelect,
+                    morph = morph,
+                    shorts = shorts,
+                    controlsActive = controlsActive,
+                    tabsEnabled = tabsEnabled,
+                    reduced = reduced,
+                    anchors = anchors,
+                )
 
                 // ── The player's controls ── (bottom-centred: the bar grows upward from them)
                 val scrubFade = Modifier.graphicsLayer { alpha = 1f - ramp(bar.scrub.value, 0f, 0.45f) }
@@ -399,6 +352,188 @@ internal fun NavPill(
         BurstBubble(burst, anchors)
         // The landing frame and Cancel, over the scrub track (outside the bar's clip).
         ScrubOverlay(bar, player, sheets, gate) { anchors.rect(anchors.bar, within = anchors.outer) }
+    }
+}
+
+@OptIn(ExperimentalHazeMaterialsApi::class)
+@Composable
+private fun Modifier.navBarSurface(container: Color, morph: PlayerMorph): Modifier {
+    val pillShape = RoundedCornerShape(percent = 50)
+    val glassOn = LocalLiquidGlassEnabled.current && isGlassSupported()
+    val haze = LocalAppHaze.current
+    // Always a filled capsule first: Haze/glass sit on top. Sampling the bar's own
+    // layer used to leave this empty (and crash liquid glass).
+    val filled = background(container, pillShape)
+    // The lens shader only accepts a CornerBasedShape. While the player bar morphs it
+    // is a custom outline — skip the lens then, keep the fill.
+    val resting = morph.progress.value < 0.02f
+    return when {
+        glassOn && resting -> filled.then(liquidGlass(pillShape))
+        haze != null -> filled.hazeEffect(state = haze, style = HazeMaterials.regular(container.copy(alpha = 0.72f))) {
+            inputScale = HazeInputScale.Fixed(0.33f)
+        }.border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, pillShape)
+        else -> filled.border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, pillShape)
+    }
+}
+
+@Composable
+private fun GlassTabRow(
+    selected: Tab,
+    onSelect: (Tab) -> Unit,
+    morph: PlayerMorph,
+    shorts: () -> Float,
+    controlsActive: Boolean,
+    tabsEnabled: Boolean,
+    reduced: Boolean,
+    anchors: BarAnchors,
+) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val shown = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
+    val selectedIndex = shown.indexOf(selected).coerceAtLeast(0)
+    val glassSpec: AnimationSpec<Float> = if (reduced) snap() else GlassSpring
+    val glassOn = LocalLiquidGlassEnabled.current
+    val glassTint = if (glassOn) glassContentColor() else c.onSurfaceVariant
+    val selectedTint = if (glassOn) glassTint else c.primary
+    val pillFill = if (glassOn) glassIndicatorColor() else c.primary.copy(alpha = 0.14f)
+
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var lastHapticTab by remember { mutableIntStateOf(selectedIndex) }
+    var rowSize by remember { mutableStateOf(IntSize.Zero) }
+    val gapPx = with(density) { TabRowGap.toPx() }
+    val n = shown.size
+    val tabWidthPx = if (rowSize.width > 0 && n > 0) (rowSize.width - gapPx * (n - 1)) / n else 0f
+    val tabStepPx = if (rowSize.width > 0 && n > 0) (rowSize.width + gapPx) / n else 0f
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    val currentTabStepPx by rememberUpdatedState(tabStepPx)
+    val currentLastIndex by rememberUpdatedState(shown.lastIndex)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentShown by rememberUpdatedState(shown)
+
+    val pillTargetPx = if (tabStepPx > 0f) selectedIndex * tabStepPx + dragOffset else 0f
+    val animatedPillOffset by animateFloatAsState(pillTargetPx, glassSpec, label = "pillOffset")
+    val lag = if (tabStepPx > 0f) (abs(pillTargetPx - animatedPillOffset) / tabStepPx).coerceIn(0f, 1f) else 0f
+    LaunchedEffect(selectedIndex) { dragOffset = 0f; lastHapticTab = selectedIndex }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .layout { measurable, constraints ->
+                val full = anchors.fullWidth.coerceAtLeast(constraints.maxWidth)
+                val tabs = measurable.measure(Constraints.fixed(full, constraints.maxHeight))
+                layout(constraints.maxWidth, constraints.maxHeight) { tabs.place((constraints.maxWidth - full) / 2, 0) }
+            }
+            .padding(TabPillInset),
+    ) {
+        if (tabWidthPx > 0f) {
+            Box(
+                Modifier
+                    .width(with(density) { tabWidthPx.toDp() })
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        translationX = animatedPillOffset
+                        scaleX = 1f + lag * PillStretch
+                        scaleY = 1f - lag * PillStretch * PillSquash
+                        alpha = 1f - ramp(morph.progress.value, 0f, 0.18f)
+                    }
+                    .background(pillFill, RoundedCornerShape(percent = 50)),
+            )
+        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { rowSize = it }
+                .pointerInput(tabsEnabled, controlsActive) {
+                    if (controlsActive || !tabsEnabled) return@pointerInput
+                    var totalDrag = 0f
+                    var dragStartIndex = currentSelectedIndex
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            totalDrag = 0f
+                            dragStartIndex = currentSelectedIndex
+                        },
+                        onDragCancel = { dragOffset = 0f },
+                        onDragEnd = {
+                            val step = currentTabStepPx
+                            if (step > 0f) {
+                                val absolute = (dragStartIndex + totalDrag / step).coerceIn(0f, currentLastIndex.toFloat())
+                                val newIndex = absolute.roundToInt()
+                                val next = currentShown.getOrNull(newIndex)
+                                if (next != null && newIndex != currentSelectedIndex) currentOnSelect(next)
+                            }
+                            dragOffset = 0f
+                        },
+                        onHorizontalDrag = { _, delta ->
+                            val step = currentTabStepPx
+                            if (step <= 0f) return@detectHorizontalDragGestures
+                            totalDrag += delta
+                            val absolute = (dragStartIndex + totalDrag / step).coerceIn(0f, currentLastIndex.toFloat())
+                            dragOffset = absolute * step - currentSelectedIndex * step
+                            val approx = absolute.roundToInt()
+                            if (approx != lastHapticTab) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                lastHapticTab = approx
+                            }
+                        },
+                    )
+                },
+            horizontalArrangement = Arrangement.spacedBy(TabRowGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            shown.forEachIndexed { i, t ->
+                val active = t == selected
+                val tint by animateColorAsState(
+                    if (active) selectedTint else (if (glassOn) glassTint.copy(alpha = 0.65f) else c.onSurfaceVariant),
+                    tween(200),
+                    label = "tabTint",
+                )
+                val scale by animateFloatAsState(if (active) 1.08f else 1f, glassSpec, label = "tabScale")
+                val interaction = remember(t) { MutableInteractionSource() }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .onPlaced { anchors.tabs[t.ordinal] = it }
+                        .graphicsLayer {
+                            val k = ramp(morph.progress.value, i * TabExitStagger, TabExitSpan + i * TabExitStagger)
+                            val sp = shorts()
+                            val d = shortsTabDrop(sp, i)
+                            alpha = (1f - k) * (if (i == 0) 1f - shortsHomeFade(sp) else 1f - d)
+                            translationY = 14.dp.toPx() * k + 16.dp.toPx() * d
+                            scaleX = (1f - 0.4f * k) * (1f - 0.15f * d)
+                            scaleY = scaleX
+                        }
+                        .then(
+                            if (controlsActive || !tabsEnabled) Modifier
+                            else Modifier.clickable(interactionSource = interaction, indication = null) {
+                                if (!active) view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                onSelect(t)
+                            },
+                        )
+                        .padding(vertical = TabVerticalPadding),
+                ) {
+                    Icon(
+                        t.icon,
+                        contentDescription = t.label,
+                        tint = tint,
+                        modifier = Modifier.size(TabIconSize).graphicsLayer {
+                            scaleX = scale * t.iconScale
+                            scaleY = scale * t.iconScale
+                        },
+                    )
+                    Spacer(Modifier.height(TabIconLabelGap))
+                    Text(
+                        t.label,
+                        style = tabLabelStyle(),
+                        color = tint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -476,7 +611,7 @@ private fun PlaySlot(
     val c = MaterialTheme.colorScheme
     val view = LocalView.current
     val playing = player.isPlaying
-    val painter = rememberVectorPainter(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow)
+    val painter = rememberVectorPainter(if (playing) SfIcons.Pause else SfIcons.Play)
     val label = if (playing) "Pause" else "Play"
     Box(
         modifier
@@ -532,7 +667,7 @@ private fun SeekButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (side < 0) Icons.Rounded.Replay10 else Icons.Rounded.Forward10,
+            if (side < 0) SfIcons.Replay10 else SfIcons.Forward10,
             contentDescription = if (side < 0) "Back 10 seconds" else "Forward 10 seconds",
             tint = c.onSurface,
             modifier = Modifier.size(PlayerIconSize).graphicsLayer { rotationZ = spin.value },

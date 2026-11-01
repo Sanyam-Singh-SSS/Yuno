@@ -90,3 +90,14 @@ fun Modifier.pressable(
             onClick = onClick,
         )
 }
+
+class BarHaptics(private val view: android.view.View) {
+    fun tick() { view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
+    fun select() { view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }
+}
+
+@Composable
+fun rememberBarHaptics(): BarHaptics {
+    val view = LocalView.current
+    return remember(view) { BarHaptics(view) }
+}

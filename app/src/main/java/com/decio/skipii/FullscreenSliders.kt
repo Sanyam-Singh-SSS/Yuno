@@ -24,13 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.VolumeDown
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.BrightnessHigh
-import androidx.compose.material.icons.rounded.BrightnessLow
-import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -59,6 +52,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import com.decio.skipii.icons.SfIcons
 
 /**
  * Fullscreen brightness and volume (GitHub issues #3 and #6): a vertical drag that starts on the
@@ -253,14 +247,14 @@ fun BoxScope.SliderLevel(sliders: FullscreenSliders) {
     val level = sliders.level
     val icon = when (side) {
         FullscreenSliders.Kind.Brightness -> when {
-            level < 0.34f -> Icons.Rounded.BrightnessLow
-            level < 0.67f -> Icons.Rounded.BrightnessMedium
-            else -> Icons.Rounded.BrightnessHigh
+            level < 0.34f -> SfIcons.BrightnessLow
+            level < 0.67f -> SfIcons.BrightnessMedium
+            else -> SfIcons.BrightnessHigh
         }
         FullscreenSliders.Kind.Volume -> when {
-            level <= 0f -> Icons.AutoMirrored.Rounded.VolumeOff
-            level < 0.5f -> Icons.AutoMirrored.Rounded.VolumeDown
-            else -> Icons.AutoMirrored.Rounded.VolumeUp
+            level <= 0f -> SfIcons.VolumeOff
+            level < 0.5f -> SfIcons.VolumeDown
+            else -> SfIcons.VolumeUp
         }
     }
     Column(

@@ -29,15 +29,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.NavigateBefore
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.Block
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.decio.skipii.icons.SfIcons
 
 private const val STEP_COUNT = 4
 
@@ -181,7 +173,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
                         Modifier.pressable(onClick = ::goBack),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.NavigateBefore, null, tint = c.onSurfaceVariant)
+                        Icon(SfIcons.ArrowBack, null, tint = c.onSurfaceVariant)
                         Text("Back", color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Row(
@@ -194,7 +186,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
                     ) {
                         Text("Next", color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.width(4.dp))
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = c.onPrimary, modifier = Modifier.size(18.dp))
+                        Icon(SfIcons.ArrowForward, null, tint = c.onPrimary, modifier = Modifier.size(18.dp))
                     }
                 }
             } else {
@@ -220,7 +212,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
                             Modifier.pressable(onClick = ::goBack),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.NavigateBefore, null, tint = c.onSurfaceVariant)
+                            Icon(SfIcons.ArrowBack, null, tint = c.onSurfaceVariant)
                             Text("Back", color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
@@ -233,7 +225,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            if (step == STEP_COUNT - 1) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,
+                            if (step == STEP_COUNT - 1) SfIcons.Check else SfIcons.ArrowForward,
                             if (step == STEP_COUNT - 1) "Get started" else "Next",
                             tint = c.onPrimary,
                         )
@@ -278,17 +270,17 @@ private fun WelcomeStep() {
     Spacer(Modifier.height(36.dp))
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         FeatureCard(
-            Icons.Rounded.Block,
+            SfIcons.Block,
             "No ads",
             "Play anything from YouTube without commercials or an ad SDK.",
         )
         FeatureCard(
-            Icons.Rounded.Headphones,
+            SfIcons.Headphones,
             "Background audio",
             "Lock the phone or switch apps — the sound keeps going.",
         )
         FeatureCard(
-            Icons.Rounded.Sync,
+            SfIcons.Sync,
             "Optional full sync",
             "Sign in for Home, subscriptions, likes and history — or stay signed out.",
         )
@@ -298,7 +290,7 @@ private fun WelcomeStep() {
 @Composable
 private fun AppearanceStep() {
     val c = MaterialTheme.colorScheme
-    Icon(Icons.Rounded.Palette, null, tint = c.primary, modifier = Modifier.size(64.dp))
+    Icon(SfIcons.Palette, null, tint = c.primary, modifier = Modifier.size(64.dp))
     Spacer(Modifier.height(16.dp))
     Text(
         "Make it yours",
@@ -334,7 +326,7 @@ private fun AppearanceStep() {
 private fun AccountStep(signedIn: Boolean, onSignIn: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val profile = Account.profile
-    Icon(Icons.Rounded.AccountCircle, null, tint = c.primary, modifier = Modifier.size(64.dp))
+    Icon(SfIcons.AccountCircle, null, tint = c.primary, modifier = Modifier.size(64.dp))
     Spacer(Modifier.height(16.dp))
     Text(
         if (signedIn) "You're signed in" else "Connect your account",
@@ -412,7 +404,7 @@ private fun ReadyStep() {
             .background(c.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.Check, null, tint = c.onPrimaryContainer, modifier = Modifier.size(44.dp))
+        Icon(SfIcons.Check, null, tint = c.onPrimaryContainer, modifier = Modifier.size(44.dp))
     }
     Spacer(Modifier.height(28.dp))
     Text(

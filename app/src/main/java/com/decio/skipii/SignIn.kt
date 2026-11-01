@@ -23,12 +23,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
+import com.decio.skipii.icons.SfIcons
 
 private const val SIGN_IN_URL =
     "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&hl=en" +
@@ -71,13 +66,13 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     Column(Modifier.fillMaxSize().background(c.surface).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).pressable(onClick = onCancel), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Cancel")
+                Icon(SfIcons.Close, "Cancel")
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
                 Text("Sign in to YouTube", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Lock, null, tint = c.onSurfaceVariant, modifier = Modifier.size(12.dp))
+                    Icon(SfIcons.Lock, null, tint = c.onSurfaceVariant, modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("accounts.google.com · kept encrypted on this phone", color = c.onSurfaceVariant, fontSize = 12.sp)
                 }
@@ -147,7 +142,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
 @Composable
 fun HeaderActions(onSearch: () -> Unit, onAccount: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        CircleAction(Icons.Rounded.Search, "Search", onSearch)
+        CircleAction(SfIcons.Search, "Search", onSearch)
         AccountAction(onAccount)
     }
 }
@@ -157,7 +152,7 @@ fun HeaderActions(onSearch: () -> Unit, onAccount: () -> Unit) {
 fun AccountAction(onClick: () -> Unit) {
     val profile = Account.profile
     if (profile == null) {
-        CircleAction(Icons.Rounded.AccountCircle, "Sign in", onClick)
+        CircleAction(SfIcons.AccountCircle, "Sign in", onClick)
     } else {
         Box(Modifier.size(44.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
             ChannelAvatar(profile.avatar, profile.name, size = 40)
@@ -196,7 +191,7 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
                 Text(profile.name, fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
                 profile.handle?.let { Text(it, color = c.onSurfaceVariant, fontSize = 14.sp) }
                 Spacer(Modifier.height(20.dp))
-                PillButton("Sign out", { Account.signOut(); onSignedOut(); onDismiss() }, Icons.AutoMirrored.Rounded.Logout)
+                PillButton("Sign out", { Account.signOut(); onSignedOut(); onDismiss() }, SfIcons.Logout)
             }
             // Settings live here (Derek's choice): every tab's header has this sheet.
             Spacer(Modifier.height(28.dp))

@@ -10,8 +10,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -30,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.decio.skipii.icons.SfIcons
 
 /** A pageable list of videos (home works as guest; subscriptions / history / playlists need sign-in). */
 @Stable
@@ -227,7 +226,7 @@ fun FeedList(
             // hold it in view when videos arrive above it, landing at the bottom of the page.
             feed.error != null && listVideos.isEmpty() -> item {
                 EmptyState(
-                    icon = Icons.Rounded.CloudOff,
+                    icon = SfIcons.CloudOff,
                     title = "Couldn't load this",
                     body = feed.error.orEmpty(),
                     action = { PillButton("Try again", { feed.refresh() }) },
@@ -235,7 +234,7 @@ fun FeedList(
             }
             !feed.loading && listVideos.isEmpty() -> item {
                 EmptyState(
-                    icon = Icons.Rounded.CloudOff,
+                    icon = SfIcons.CloudOff,
                     title = "Nothing here yet",
                     body = "Pull down to refresh, or try again in a moment.",
                     action = { PillButton("Try again", { feed.refresh() }) },

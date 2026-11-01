@@ -6,10 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.ThumbUp
-import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,14 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Subscriptions
-import androidx.compose.material.icons.rounded.TravelExplore
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +65,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.decio.skipii.icons.SfIcons
 
 // ── Home / Subscriptions / Library ─────────────────────────────────────────────
 // Signed in, these show the account's real feeds. Signed out, they explain what signing
@@ -154,7 +143,7 @@ fun SubscriptionsScreen(
                     selectedChannel != null && filteredVideos.isNullOrEmpty() && !lib.subscriptions.loading -> {
                         Box(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
                             EmptyState(
-                                icon = Icons.Rounded.Subscriptions,
+                                icon = SfIcons.Subscriptions,
                                 title = "Nothing recent",
                                 body = "No new uploads from ${selectedChannel.name} in this feed yet.",
                             )
@@ -174,7 +163,7 @@ fun SubscriptionsScreen(
                 LazyColumn(contentPadding = contentPadding.withTop(top)) {
                     item {
                         EmptyState(
-                            icon = Icons.Rounded.Subscriptions,
+                            icon = SfIcons.Subscriptions,
                             title = "Your subscriptions",
                             body = "Sign in with Google to see new videos from the channels you follow.",
                             action = { PillButton("Sign in with Google", onSignIn) },
@@ -383,9 +372,9 @@ private fun PlaylistTile(playlist: PlaylistRef, modifier: Modifier, onClick: () 
     val c = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(26.dp)
     val (icon, tone) = when (playlist.id) {
-        "WL" -> Icons.Rounded.WatchLater to c.primaryContainer
-        "LL" -> Icons.Rounded.ThumbUp to c.tertiaryContainer
-        else -> Icons.AutoMirrored.Rounded.PlaylistPlay to c.secondaryContainer
+        "WL" -> SfIcons.Clock to c.primaryContainer
+        "LL" -> SfIcons.ThumbUpFill to c.tertiaryContainer
+        else -> SfIcons.PlaylistPlay to c.secondaryContainer
     }
     Column(
         modifier = modifier
@@ -437,7 +426,7 @@ fun PlaylistScreen(
         },
     ) { top ->
         if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
-            Box(Modifier.padding(top = top)) { EmptyState(Icons.Rounded.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.") }
+            Box(Modifier.padding(top = top)) { EmptyState(SfIcons.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.") }
         } else {
             FeedList(feed, contentPadding.withTop(top), onOpen, indicatorTop = top, channelAvatarSeed = avatarSeed)
         }
@@ -597,7 +586,7 @@ fun SearchScreen(
                         .padding(start = 16.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Rounded.Search, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    Icon(SfIcons.Search, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
                     Box(Modifier.weight(1f)) {
                         if (state.query.isEmpty()) {
@@ -635,7 +624,7 @@ fun SearchScreen(
                                 showSearchKeyboard()
                             },
                             contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Rounded.Close, "Clear", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                        ) { Icon(SfIcons.Close, "Clear", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
                     }
                 }
             }
@@ -660,7 +649,7 @@ fun SearchScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                Icons.Rounded.Search,
+                                SfIcons.Search,
                                 null,
                                 tint = c.onSurfaceVariant,
                                 modifier = Modifier.size(22.dp),
@@ -688,18 +677,18 @@ fun SearchScreen(
                 CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
             }
             state.error != null -> EmptyState(
-                icon = Icons.Rounded.CloudOff,
+                icon = SfIcons.CloudOff,
                 title = "Search didn't load",
                 body = state.error.orEmpty(),
                 action = { PillButton("Try again", { state.submit() }) },
             )
             state.submitted.isEmpty() -> EmptyState(
-                icon = Icons.Rounded.TravelExplore,
+                icon = SfIcons.Explore,
                 title = "Search without the ads",
                 body = "Results play straight away, with no ads and no sign-in.",
             )
             state.results.isEmpty() -> EmptyState(
-                icon = Icons.Rounded.History,
+                icon = SfIcons.History,
                 title = "Nothing found",
                 body = "No videos matched “${state.submitted}”.",
             )
@@ -741,7 +730,7 @@ private fun SearchHistoryList(history: List<String>, contentPadding: PaddingValu
                     .padding(start = 24.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.History, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                Icon(SfIcons.History, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(16.dp))
                 Text(
                     query,
@@ -754,7 +743,7 @@ private fun SearchHistoryList(history: List<String>, contentPadding: PaddingValu
                 Box(
                     modifier = Modifier.size(44.dp).pressable { SearchHistory.remove(query) },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Close, "Remove", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                ) { Icon(SfIcons.Close, "Remove", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
             }
         }
     }

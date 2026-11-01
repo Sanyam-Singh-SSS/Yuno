@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.decio.skipii"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.skipii"
@@ -37,7 +37,12 @@ android {
         // NewPipeExtractor uses java.nio / java.time APIs that need desugaring below API 33.
         isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        // The SF Symbols artifact is built with a newer Kotlin than this project;
+        // its generated ImageVector data uses nothing this compiler can't read.
+        freeCompilerArgs += "-Xskip-metadata-version-check"
+    }
     buildFeatures { compose = true; buildConfig = true }
 
     packaging {
@@ -64,6 +69,12 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // BitChord's icon set: its custom nav/player glyphs live in-tree, and the
+    // rest of its icons are SF Symbols. Non-transitive, as BitChord takes it.
+    implementation("com.github.cosmictaserdev-creator.Jetpack_SF_Symbols:sfsymbols-android:1.1.1") {
+        isTransitive = false
+    }
+
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")
@@ -75,6 +86,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.guava:guava:33.3.1-android")
+    // Backdrop frost for the liquid-glass nav (BitChord-style, Telegram-like Haze).
+    implementation("dev.chrisbanes.haze:haze:1.6.10")
+    implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
 
     // Parser tests run on the JVM against real InnerTube responses (src/test/resources).
     testImplementation("junit:junit:4.13.2")

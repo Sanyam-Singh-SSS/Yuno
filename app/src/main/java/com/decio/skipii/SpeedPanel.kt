@@ -38,11 +38,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Headphones
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -80,6 +75,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.decio.skipii.icons.SfIcons
 
 /**
  * The speed ruler (0.5.34: shown inside the player's bar, PlayerBar.kt, picked from its tools):
@@ -271,7 +267,7 @@ private fun RememberCheck(checked: Boolean, modifier: Modifier, onToggle: () -> 
     Row(modifier.pressable(pressedScale = 0.98f, onClick = onToggle).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(24.dp).background(fill, RoundedCornerShape(radius)), contentAlignment = Alignment.Center) {
             Icon(
-                Icons.Rounded.Check, null, tint = c.onPrimary,
+                SfIcons.Check, null, tint = c.onPrimary,
                 modifier = Modifier.size(18.dp).graphicsLayer { alpha = mark.coerceIn(0f, 1f); scaleX = mark; scaleY = mark },
             )
         }

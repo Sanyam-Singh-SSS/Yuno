@@ -29,12 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.PersonAdd
-import androidx.compose.material.icons.rounded.PersonRemove
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -122,6 +116,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import com.decio.skipii.icons.SfIcons
 
 // Shorts (0.5.50, Derek, 2026-10-28; a Shorts tab was first proposed by essopsp in PR #10).
 // A full-bleed vertical feed on its own players: the app's video pauses while it's open and
@@ -1231,7 +1226,7 @@ private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
         }
         val pausedAlpha by animateFloatAsState(if (onScreen && shorts.userPaused) 1f else 0f, tween(160), label = "shortPaused")
         Icon(
-            Icons.Rounded.PlayArrow, contentDescription = null, tint = Ink,
+            SfIcons.Play, contentDescription = null, tint = Ink,
             modifier = Modifier.align(Alignment.Center).size(72.dp).graphicsLayer { alpha = pausedAlpha * 0.9f },
         )
     }
@@ -1295,7 +1290,7 @@ private fun ShortVideo(shorts: ShortsState, page: Int, modifier: Modifier) {
 private fun ShortsProblem(message: String, onRetry: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 40.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = Ink.copy(alpha = 0.8f), modifier = Modifier.size(44.dp))
+        Icon(SfIcons.CloudOff, contentDescription = null, tint = Ink.copy(alpha = 0.8f), modifier = Modifier.size(44.dp))
         Spacer(Modifier.height(12.dp))
         Text(message, color = Ink, fontSize = 14.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(18.dp))
@@ -1636,14 +1631,14 @@ fun ShortsChannelMenu(shorts: ShortsState, bottom: Dp, onChannel: (String) -> Un
                 modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 4.dp),
             )
             MenuRow(
-                icon = if (subscribed) Icons.Rounded.PersonRemove else Icons.Rounded.PersonAdd,
+                icon = if (subscribed) SfIcons.PersonRemove else SfIcons.PersonAdd,
                 label = if (subscribed) "Unsubscribe" else "Subscribe",
                 enabled = open,
             ) {
                 shorts.toggleSubscribe()
                 shorts.channelMenu = false
             }
-            MenuRow(icon = Icons.Rounded.AccountCircle, label = "Go to channel", enabled = open) {
+            MenuRow(icon = SfIcons.AccountCircle, label = "Go to channel", enabled = open) {
                 shorts.channelMenu = false
                 details?.item?.channelUrl?.let(onChannel) ?: shorts.onMessage("This channel can't be opened.")
             }

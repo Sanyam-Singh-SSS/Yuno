@@ -24,9 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -59,6 +56,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import com.decio.skipii.icons.SfIcons
 
 /**
  * Self-update from the GitHub releases (issue #13). Once a day the newest release's Skipii.apk is
@@ -424,7 +422,7 @@ fun UpdateAction() {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(
-                if (phase == AppUpdate.Phase.Failed) Icons.Rounded.Refresh else Icons.Rounded.SystemUpdateAlt,
+                if (phase == AppUpdate.Phase.Failed) SfIcons.Refresh else SfIcons.SystemUpdateAlt,
                 contentDescription = null,
                 tint = c.onPrimary,
                 modifier = Modifier.size(20.dp),

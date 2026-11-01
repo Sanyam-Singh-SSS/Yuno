@@ -35,8 +35,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -68,11 +66,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.PushPin
-import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -100,6 +93,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.decio.skipii.icons.SfIcons
 
 /** Comments for the open video: first page, paging, per-comment replies, likes and posting. */
 @Stable
@@ -439,7 +433,7 @@ fun CommentsPanel(
                     }
                     Spacer(Modifier.weight(1f))
                     Box(Modifier.size(44.dp).pressable { close() }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Close, "Close comments", tint = c.onSurfaceVariant)
+                        Icon(SfIcons.Close, "Close comments", tint = c.onSurfaceVariant)
                     }
                 }
             }
@@ -499,7 +493,7 @@ private fun Composer(state: CommentsState) {
             Row(Modifier.padding(start = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Replying to ${target.displayName()}", color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Box(Modifier.size(28.dp).pressable { state.replyingTo = null }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Close, "Cancel reply", tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(SfIcons.Close, "Cancel reply", tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -536,7 +530,7 @@ private fun Composer(state: CommentsState) {
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.posting) CircularProgressIndicator(color = c.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                else Icon(Icons.AutoMirrored.Rounded.Send, "Post", tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                else Icon(SfIcons.Send, "Post", tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -557,7 +551,7 @@ private fun CreatorHeartBadge(avatarUrl: String?, name: String) {
                 .background(c.surface),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Favorite, "Hearted by creator", tint = c.primary, modifier = Modifier.size(9.dp))
+            Icon(SfIcons.HeartFill, "Hearted by creator", tint = c.primary, modifier = Modifier.size(9.dp))
         }
     }
 }
@@ -576,7 +570,7 @@ private fun CommentRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (comment.pinned) Icon(Icons.Rounded.PushPin, "Pinned", tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                if (comment.pinned) Icon(SfIcons.Pin, "Pinned", tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(comment.displayName(), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 comment.ago?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
             }
@@ -595,7 +589,7 @@ private fun CommentRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FlourishIcon(
-                        if (isLiked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+                        if (isLiked) SfIcons.ThumbUpFill else SfIcons.ThumbUp,
                         if (isLiked) "Unlike" else "Like",
                         active = isLiked, kind = Flourish.Pop, tint = likeTint, size = 16.dp,
                     )
@@ -610,7 +604,7 @@ private fun CommentRow(
                     if (creatorName.isNotBlank()) {
                         CreatorHeartBadge(creatorAvatar, creatorName)
                     } else {
-                        Icon(Icons.Rounded.Favorite, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
+                        Icon(SfIcons.HeartFill, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
                     }
                 }
                 if (Account.signedIn && !comment.id.startsWith("local-")) {

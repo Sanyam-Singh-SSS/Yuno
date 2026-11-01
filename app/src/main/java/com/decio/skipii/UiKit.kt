@@ -25,10 +25,6 @@ import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -66,6 +62,7 @@ import kotlin.math.roundToInt
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import com.decio.skipii.icons.SfIcons
 
 // ── Shapes ─────────────────────────────────────────────────────────────────────
 
@@ -144,7 +141,7 @@ fun BackScreenHeader(
             .padding(horizontal = ScreenHeaderHorizontal, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircleAction(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
+        CircleAction(SfIcons.ArrowBack, "Back", onBack)
         Spacer(Modifier.width(12.dp))
         content()
     }
@@ -160,7 +157,7 @@ fun BrandMark() {
             .background(Brush.linearGradient(listOf(c.primary, c.primary.copy(alpha = 0.82f)))),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.FastForward, contentDescription = null, tint = c.onPrimary, modifier = Modifier.size(20.dp))
+        Icon(SfIcons.FastForward, contentDescription = null, tint = c.onPrimary, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -528,7 +525,7 @@ fun ChannelNameWithBadge(
         )
         if (verified) {
             Spacer(Modifier.width(5.dp))
-            Icon(Icons.Rounded.Verified, "Verified", Modifier.size(badge), tint = c.onSurfaceVariant)
+            Icon(SfIcons.Verified, "Verified", Modifier.size(badge), tint = c.onSurfaceVariant)
         }
     }
 }
