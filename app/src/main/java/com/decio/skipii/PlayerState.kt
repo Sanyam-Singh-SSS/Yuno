@@ -108,6 +108,13 @@ class PlayerState(private val scope: CoroutineScope) {
     var firstFrameRendered by mutableStateOf(false)
         private set
     /**
+     * A different video was just opened. The player is paused and the old picture stays
+     * hidden until that video's own first frame, so the last one doesn't keep playing
+     * under the spinner while its details load.
+     */
+    var blankUntilFrame by mutableStateOf(false)
+        private set
+    /**
      * The shared video surface still holds the frame from when audio only began. Turning video
      * back on switches straight away, so the picture stays hidden (thumbnail + spinner) until
      * the renderer draws a fresh frame, instead of showing that frozen one. Starting in audio
@@ -177,6 +184,11 @@ class PlayerState(private val scope: CoroutineScope) {
     private var openedAt = 0L
 
     private fun show(item: VideoItem, startPlayback: Boolean) {
+        // Drop the video already on screen before its replacement has anything to show.
+        if (startPlayback && current != null && current?.id != item.id) {
+            blankUntilFrame = true
+            controller?.pause()
+        }
         endHoldSpeed()
         openedAt = android.os.SystemClock.elapsedRealtime()
         Log.i("SkipiiTime", "open ${item.id}")
@@ -399,6 +411,7 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
     fun setLike(target: LikeStatus) {
+        if (!Account.signedIn) { actionMessage = "Sign in to like videos."; return }
         val id = current?.id ?: return
         val before = accountState ?: return
         val next = if (before.like == target) LikeStatus.None else target
@@ -410,6 +423,7 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun toggleSubscribe() {
+        if (!Account.signedIn) { actionMessage = "Sign in to subscribe."; return }
         val before = accountState ?: return
         val channelId = before.channelId
             ?: details?.item?.channelUrl?.substringAfter("/channel/", "")?.takeIf { it.startsWith("UC") }
@@ -423,6 +437,7 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun toggleWatchLater() {
+        if (!Account.signedIn) { actionMessage = "Sign in to save videos."; return }
         val id = current?.id ?: return
         val add = !inWatchLater
         inWatchLater = add
@@ -435,6 +450,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** Long-press Save. Runs here, not in the sheet: closing the sheet would cancel its scope mid-request. */
     fun saveToWatchLater(video: VideoItem) {
+        if (!Account.signedIn) { actionMessage = "Sign in to save videos."; return }
         scope.launch {
             runCatching { InnerTube.setInWatchLater(video.id, true) }
                 .onSuccess {
@@ -457,6 +473,7 @@ class PlayerState(private val scope: CoroutineScope) {
     private var choicesJob: Job? = null
 
     fun openPlaylists(video: VideoItem) {
+        if (!Account.signedIn) { actionMessage = "Sign in to save to a playlist."; return }
         playlistTarget = video
         playlistChoices = null
         playlistError = null
@@ -681,6 +698,7 @@ class PlayerState(private val scope: CoroutineScope) {
         details = null
         error = null
         loading = false
+        blankUntilFrame = false
     }
 
     /**
@@ -765,9 +783,13 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
         override fun onRenderedFirstFrame() {
+            // A frame of the video we just left can still land while the next one's details
+            // load. Only the new video's own frame may bring the picture back.
+            if (controller?.currentMediaItem?.mediaId != current?.id) return
             Log.i("SkipiiTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
             firstFrameRendered = true
             videoStale = false
+            blankUntilFrame = false
         }
 
         override fun onPlayerError(e: PlaybackException) {

@@ -43,7 +43,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -292,9 +291,7 @@ fun PlayerScreen(
                                 }
                             }
                             }
-                            state.accountState?.subscribed?.let { subscribed ->
-                                SubscribeButton(subscribed, onClick = state::toggleSubscribe)
-                            }
+                            SubscribeButton(state.accountState?.subscribed == true, onClick = state::toggleSubscribe)
                         }
                         // Speed, quality and audio only live on the video's own controls (VideoView.kt).
                         PlayerActions(state)
@@ -310,9 +307,7 @@ fun PlayerScreen(
                     }
                 } else if (state.loading) {
                     item(key = "loading") {
-                        Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
-                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                        }
+                        Box(Modifier.padding(horizontal = 20.dp)) { MoreVideoSkeletons() }
                     }
                 }
             }
@@ -655,9 +650,9 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The action row: like | dislike, Save and Playlist (signed in), then Share (GitHub issue #19; signed out
- * it's the whole row). It runs edge to edge inside so a long like count scrolls it sideways instead of squeezing
- * the buttons, and the like sparks still have room to fly.
+ * The action row: like | dislike, Save, Playlist, then Share. Signed out, those account
+ * buttons stay and a tap says to sign in. The row runs edge to edge inside so a long like
+ * count scrolls it sideways instead of squeezing the buttons, and the like sparks still have room to fly.
  */
 @Composable
 private fun PlayerActions(state: PlayerState) {
@@ -670,7 +665,7 @@ private fun PlayerActions(state: PlayerState) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (state.accountState != null) AccountActions(state)
+        AccountActions(state)
         val context = LocalContext.current
         val item = state.current
         ActionPill(
@@ -851,7 +846,9 @@ fun MiniPlayer(
                 // The captured frame, not the poster. The poster was a different
                 // picture, so it flashed in whenever the live view moved.
                 Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
-                    if (HeldFrame.image != null && !state.hidesStaleVideo) {
+                    if (state.blankUntilFrame) {
+                        Box(Modifier.fillMaxSize().background(Color.Black))
+                    } else if (HeldFrame.image != null && !state.hidesStaleVideo) {
                         HeldFrameImage(Modifier.fillMaxSize().aspectFit(state.videoAspect))
                     } else {
                         Thumbnail(item.thumbnail, Modifier.fillMaxSize().aspectFit(state.videoAspect), radius = 0)

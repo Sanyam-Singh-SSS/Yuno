@@ -11,13 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -105,6 +105,7 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
     }
 
     fun toggleSubscribe(onError: (String) -> Unit) {
+        if (!Account.signedIn) { onError("Sign in to subscribe."); return }
         val id = details?.id ?: return
         val before = subscribed ?: return
         subscribed = !before
@@ -144,8 +145,10 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                 SfIcons.CloudOff, "Couldn't load this channel", state.error.orEmpty(),
                 action = { PillButton("Try again", state::load) },
             ) }
-            d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
-                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
+            d == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding.withTop(top)),
+            ) {
+                ChannelSkeletons()
             }
             else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
                 item(key = "header") {
@@ -168,10 +171,8 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                                 }
                             }
                         }
-                        state.subscribed?.let { subscribed ->
-                            Spacer(Modifier.height(14.dp))
-                            ChannelSubscribeButton(subscribed) { state.toggleSubscribe(onMessage) }
-                        }
+                        Spacer(Modifier.height(14.dp))
+                        ChannelSubscribeButton(state.subscribed == true) { state.toggleSubscribe(onMessage) }
                         if (d.description.isNotBlank()) {
                             Spacer(Modifier.height(12.dp))
                             Text(d.description, color = c.onSurfaceVariant, fontSize = 13.5.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -180,11 +181,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                 }
                 item(key = "videosTitle") { SectionTitle("Videos") }
                 items(state.videos, key = { it.id }) { video -> VideoCard(video, onClick = { onOpen(video) }) }
-                if (state.loading || state.hasMore) item {
-                    Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                        CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                    }
-                }
+                if (state.loading || state.hasMore) item { FeedSkeletons(1) }
             }
         }
     }

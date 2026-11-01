@@ -1,6 +1,7 @@
 package com.decio.skipii
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -312,9 +312,7 @@ fun LibraryScreen(
                     ) {
                         items(history.take(20), key = { "h-" + it.id }) { video -> HistoryCard(video) { onOpen(video) } }
                     }
-                    signedIn && lib.history.loading -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 4.dp, modifier = Modifier.size(28.dp))
-                    }
+                    signedIn && lib.history.loading -> HistorySkeletons()
                     else -> Text(
                         if (signedIn) lib.history.error ?: "Nothing watched yet."
                         else "Videos you watch on this phone show up here.",
@@ -673,9 +671,9 @@ fun SearchScreen(
                 contentPadding = contentPadding.withTop(top),
                 onSearch = { state.updateQuery(it); submit() },
             )
-            state.loading && state.results.isEmpty() -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), Alignment.Center) {
-                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
-            }
+            state.loading && state.results.isEmpty() -> Column(
+                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(contentPadding.withTop(top)),
+            ) { FeedSkeletons() }
             state.error != null -> EmptyState(
                 icon = SfIcons.CloudOff,
                 title = "Search didn't load",

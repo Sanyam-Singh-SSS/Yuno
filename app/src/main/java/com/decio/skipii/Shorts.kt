@@ -1371,9 +1371,8 @@ fun ShortsBar(shorts: ShortsState, progress: () -> Float, onBack: () -> Unit, mo
                 // The channel as drawn (no optical nudge: Derek, 2026-10-28), its badge + / ✓.
                 Box(Modifier.size(30.dp)) {
                     ChannelAvatar(details?.item?.avatar, details?.item?.channel.orEmpty(), size = 30)
-                    if (Account.signedIn && account != null) {
-                        val subscribed = account.subscribed == true
-                        Box(
+                    val subscribed = account?.subscribed == true
+                    Box(
                             Modifier
                                 .align(Alignment.BottomEnd)
                                 .offset(x = 4.dp, y = 2.dp)
@@ -1382,7 +1381,6 @@ fun ShortsBar(shorts: ShortsState, progress: () -> Float, onBack: () -> Unit, mo
                                 .background(Ink, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) { Icon(if (subscribed) CheckGlyph else PlusGlyph, contentDescription = null, tint = Color(0xFF141218), modifier = Modifier.size(11.dp)) }
-                    }
                 }
             }
         }

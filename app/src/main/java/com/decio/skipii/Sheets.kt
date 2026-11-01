@@ -61,8 +61,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -103,10 +101,8 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
         }
         OptionRow(SfIcons.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
         OptionRow(SfIcons.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
-        if (Account.signedIn) {
-            OptionRow(SfIcons.Clock, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
-            OptionRow(SfIcons.LibraryAdd, "Save to playlist") { onDismiss(); player.openPlaylists(video) }
-        }
+        OptionRow(SfIcons.Clock, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
+        OptionRow(SfIcons.LibraryAdd, "Save to playlist") { onDismiss(); player.openPlaylists(video) }
         OptionRow(SfIcons.Share, "Share") {
             shareLink(context, "https://youtu.be/${video.id}", video.title)
             onDismiss()
@@ -150,9 +146,7 @@ fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem) {
                     Spacer(Modifier.height(12.dp))
                     PillButton("Try again", { player.openPlaylists(video) })
                 }
-                choices == null -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(28.dp))
-                }
+                choices == null -> PlaylistChoiceSkeletons()
                 else -> {
                     choices.forEach { choice ->
                         PlaylistChoiceRow(choice) { player.setInPlaylist(video, choice, add = choice.contains != true) }

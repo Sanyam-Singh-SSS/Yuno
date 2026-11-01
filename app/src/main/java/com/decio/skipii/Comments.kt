@@ -227,12 +227,14 @@ class CommentsState(private val scope: CoroutineScope) {
     var postError by mutableStateOf<String?>(null)
 
     fun startReply(comment: Comment) {
+        if (!Account.signedIn) { postError = "Sign in to reply."; return }
         replyingTo = comment
         // Replies to a reply go to the same thread, addressed with an @mention (as on YouTube).
         if (comment.id.contains('.') && draft.isBlank()) draft = "${comment.author.trim()} "
     }
 
     fun post() {
+        if (!Account.signedIn) { postError = "Sign in to comment."; return }
         val id = videoId ?: return
         val text = draft.trim()
         if (text.isEmpty() || posting) return
@@ -278,7 +280,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
         modifier = Modifier
             .padding(top = 16.dp)
             .fillMaxWidth()
-            .pressable(enabled = state.comments.isNotEmpty() || (Account.signedIn && !state.disabled && !state.loading), pressedScale = 0.98f, onClick = onOpen)
+            .pressable(enabled = !state.disabled && (state.comments.isNotEmpty() || !state.loading), pressedScale = 0.98f, onClick = onOpen)
             .clip(shape)
             .background(c.surfaceContainerLow)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -305,9 +307,9 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            state.loading -> CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(22.dp))
+            state.loading -> CommentSkeletons(count = 1, avatar = 30.dp)
             state.error != null -> Text(state.error.orEmpty(), color = c.onSurfaceVariant, fontSize = 13.5.sp)
-            else -> Text(if (Account.signedIn) "No comments yet. Add the first one." else "No comments yet.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
+            else -> Text("No comments yet. Add the first one.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
         }
     }
 }
@@ -446,10 +448,11 @@ fun CommentsPanel(
                 items(state.comments, key = { it.id }) {
                     CommentRow(it, state, creatorAvatar, creatorName)
                 }
-                if (state.loading || state.hasMore) item {
-                    Box(Modifier.fillMaxWidth().padding(20.dp), Alignment.Center) {
-                        CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
-                    }
+                if (state.comments.isEmpty() && state.loading) item {
+                    CommentSkeletons(start = 20.dp)
+                }
+                if (state.comments.isNotEmpty() && (state.loading || state.hasMore)) item {
+                    CommentSkeletons(count = 2, start = 20.dp)
                 }
                 if (!state.loading && state.comments.isEmpty()) item {
                     Text(
@@ -459,13 +462,9 @@ fun CommentsPanel(
                 }
                 item { Spacer(Modifier.height(12.dp)) }
             }
-            if (Account.signedIn) Composer(state) else Text(
-                "Sign in to comment.",
-                color = c.onSurfaceVariant, fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 20.dp, vertical = 14.dp),
-            )
+            Composer(state)
             // Clear of the gesture bar when the keyboard isn't up.
-            Spacer(Modifier.fillMaxWidth().background(if (Account.signedIn) c.surfaceContainer else c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
+            Spacer(Modifier.fillMaxWidth().background(c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 }
@@ -580,11 +579,14 @@ private fun CommentRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Like (signed in): pops like the video's like, and the count follows.
                 val isLiked = state.liked[comment.id] == true
-                val canLike = Account.signedIn && !comment.id.startsWith("local-")
+                val own = comment.id.startsWith("local-")
                 val likeTint = if (isLiked) c.primary else c.onSurfaceVariant
                 Row(
                     Modifier
-                        .pressable(enabled = canLike) { state.toggleLike(comment) { state.postError = it } }
+                        .pressable(enabled = !own) {
+                            if (Account.signedIn) state.toggleLike(comment) { state.postError = it }
+                            else state.postError = "Sign in to like comments."
+                        }
                         .padding(vertical = 4.dp, horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -607,7 +609,7 @@ private fun CommentRow(
                         Icon(SfIcons.HeartFill, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
                     }
                 }
-                if (Account.signedIn && !comment.id.startsWith("local-")) {
+                if (!comment.id.startsWith("local-")) {
                     Spacer(Modifier.width(16.dp))
                     Text(
                         "Reply",
@@ -618,7 +620,6 @@ private fun CommentRow(
             }
             if (!isReply && comment.replyCount > 0 && comment.repliesToken != null) {
                 val open = state.replies.containsKey(comment.id)
-                val busy = state.repliesLoading[comment.id] == true
                 Row(
                     modifier = Modifier
                         .padding(top = 6.dp)
@@ -632,13 +633,14 @@ private fun CommentRow(
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 13.sp,
                     )
-                    if (busy) {
-                        Spacer(Modifier.width(8.dp))
-                        CircularProgressIndicator(color = c.primary, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
-                    }
                 }
             }
         }
+    }
+    if (!isReply && comment.replyCount > 0 && comment.repliesToken != null &&
+        state.repliesLoading[comment.id] == true && !state.replies.containsKey(comment.id)
+    ) {
+        CommentSkeletons(count = 1, avatar = 28.dp, start = 62.dp)
     }
     if (!isReply) {
         state.replies[comment.id]?.forEach { reply ->
