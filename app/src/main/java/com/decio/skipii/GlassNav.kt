@@ -83,13 +83,14 @@ fun GlassNavBar(
                     // The pull lifts the pill. It has to sit outside the accessory's clip,
                     // or the top of the bar is cut off as the finger rises (BitChord puts
                     // the gesture on the outside of the glass).
-                    modifier = Modifier.miniPlayerPullGestures(pull).then(accessoryModifier),
+                    modifier = Modifier.miniPlayerPullGestures(pull, onDismiss = player::close).then(accessoryModifier),
                     shape = pillShape,
                     showVideo = visible && dock?.coversMiniArt != true,
                     compact = true,
                     // Only the row the fold is settling on reports where the artwork lands.
                     dock = if (visible) dock else null,
                     pull = null,
+                    gestures = false,
                 )
             }
         } else null,
@@ -99,11 +100,12 @@ fun GlassNavBar(
                 MiniPlayer(
                     state = player,
                     onExpand = onExpandPlayer,
-                    modifier = Modifier.miniPlayerPullGestures(pull).fillMaxWidth().then(accessoryModifier),
+                    modifier = Modifier.miniPlayerPullGestures(pull, onDismiss = player::close).fillMaxWidth().then(accessoryModifier),
                     shape = pillShape,
                     showVideo = visible && dock?.coversMiniArt != true,
                     dock = if (visible) dock else null,
                     pull = null,
+                    gestures = false,
                 )
             }
         } else null,

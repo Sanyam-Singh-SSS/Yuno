@@ -800,6 +800,8 @@ fun MiniPlayer(
     compact: Boolean = false,
     dock: PlayerDock? = null,
     pull: MiniPlayerPull? = null,
+    /** False when a parent already owns the pull (the glass bar, outside its clip). */
+    gestures: Boolean = true,
 ) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
@@ -827,7 +829,7 @@ fun MiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(if (compact) MiniHeightInline else MiniHeight)
-            .miniPlayerPullGestures(pull)
+            .then(if (gestures) Modifier.miniPlayerPullGestures(pull, onDismiss = state::close) else Modifier)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
             .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
             .clip(shape)
