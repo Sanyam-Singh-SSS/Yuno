@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -53,7 +55,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -101,10 +102,9 @@ import kotlin.math.sin
 import com.decio.skipii.icons.SfIcons
 
 /**
- * The video — shared by the portrait player and fullscreen. In fullscreen a tap toggles the
- * overlay controls; they auto-hide while playing. In portrait (0.5.34) the video has no
- * controls of its own: they all live in the player's bar (PlayerBar.kt); double-tap seek, the
- * loading spinner, the SponsorBlock Ask pill / skipped note and errors stay on the video.
+ * The video with its overlay controls — shared by the portrait player and fullscreen.
+ * A tap toggles the controls; they auto-hide while playing. Double-tap seek, the loading
+ * spinner, the SponsorBlock Ask pill / skipped note and errors stay on the video.
  * [controlsAlpha] lets the morph hold them back until the video has landed.
  */
 @Composable
@@ -126,7 +126,6 @@ fun VideoContent(
     var controlsVisible by remember { mutableStateOf(false) }
     var touchedAt by remember { mutableLongStateOf(0L) }
     fun touched() { touchedAt = System.nanoTime() }
-    SideEffect { state.videoControlsVisible = controlsVisible }
     LaunchedEffect(controlsVisible, state.isPlaying, touchedAt) {
         if (controlsVisible && state.isPlaying) {
             delay(Motion.ControlsHideMs)
@@ -171,7 +170,7 @@ fun VideoContent(
     }
     val currentInteractive by androidx.compose.runtime.rememberUpdatedState(interactive)
     val currentInactiveTap by androidx.compose.runtime.rememberUpdatedState(onInactiveTap)
-    fun toggleControls() { if (fullscreen) { controlsVisible = !controlsVisible; touched() } }
+    fun toggleControls() { controlsVisible = !controlsVisible; touched() }
     fun seekStep(side: Int) {
         val moved = state.seekBy(side * SeekStepMs)
         burstSeconds += ((abs(moved) + 500) / 1000).toInt()
@@ -331,9 +330,8 @@ fun VideoContent(
                 }
             }
         }
-        // Portrait chrome lives on the player bar; fullscreen still draws its overlay here.
         val chromeAlpha = if (scrubbing) 0f else visibleAlpha * controlsAlpha()
-        if (fullscreen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
@@ -350,7 +348,7 @@ fun VideoContent(
                 Modifier
             }
             Box(Modifier.fillMaxSize().then(edge)) {
-                // Top row: minimize / exit fullscreen, title (fullscreen), quality.
+                // Top row: title (fullscreen), chapters, speed, quality, audio only, picture-in-picture.
                 Row(
                     Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -369,21 +367,31 @@ fun VideoContent(
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
+                    val chapters = state.details?.chapters.orEmpty()
+                    if (chapters.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        ControlPill("Chapters", enabled) { touched(); state.sheet = PlayerSheet.Chapters }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // Only says it's off 1× by its own value; the pill is always there to reach the ruler.
+                    ControlPill(PlaybackSpeed.label(state.speed) + "×", enabled) { touched(); state.sheet = PlayerSheet.Speed }
                     // Label tier from decoded frames (1080p, not ultrawide pixel height); details until known.
                     (state.decodedHeight?.let { "${it}p" } ?: state.details?.quality)?.let { quality ->
-                        Box(
-                            Modifier
-                                .pressable(enabled = enabled) { touched(); state.sheet = PlayerSheet.Quality }
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.38f))
-                                .padding(horizontal = 11.dp, vertical = 7.dp),
-                        ) {
-                            Text(
-                                if (QualityPreference.height == null) "Auto · $quality" else quality,
-                                color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Black,
-                            )
-                        }
+                        Spacer(Modifier.width(8.dp))
+                        ControlPill(
+                            if (QualityPreference.height == null) "Auto · $quality" else quality,
+                            enabled,
+                        ) { touched(); state.sheet = PlayerSheet.Quality }
                     }
+                    Spacer(Modifier.width(8.dp))
+                    GlassButton(
+                        SfIcons.Headphones,
+                        if (AudioOnly.enabled) "Video off" else "Audio only",
+                        enabled,
+                        size = 30.dp,
+                        iconSize = 18.dp,
+                        active = AudioOnly.enabled,
+                    ) { touched(); state.setAudioOnly(!AudioOnly.enabled) }
                     if (pip?.supported == true) {
                         Spacer(Modifier.width(8.dp))
                         GlassButton(SfIcons.Pip, "Picture-in-picture", enabled, size = 30.dp, iconSize = 18.dp) {
@@ -799,13 +807,73 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
             )
         }
-        QualityRow("Auto", "Best up to 1080p" + ((state.decodedHeight?.let { "${it}p" } ?: details.quality)?.let { " · playing $it" } ?: ""), chosen == null) {
+        SheetRow("Auto", "Best up to 1080p" + ((state.decodedHeight?.let { "${it}p" } ?: details.quality)?.let { " · playing $it" } ?: ""), chosen == null) {
             state.setQuality(null); onDismiss()
         }
         details.qualities.forEach { h ->
-            QualityRow("${h}p", qualityTag(h), chosen == h) { state.setQuality(h); onDismiss() }
+            SheetRow("${h}p", qualityTag(h), chosen == h) { state.setQuality(h); onDismiss() }
         }
         Spacer(Modifier.height(28.dp))
+        }
+    }
+}
+
+/** The speed ruler (SpeedPanel.kt) on its own, opened from the controls' speed pill. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SpeedSheet(state: PlayerState, onDismiss: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surfaceContainerLow,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text(
+                "Speed",
+                fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            )
+            SpeedPanelContent(state)
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+/** The video's chapters, the one playing marked; picking one seeks there and closes the sheet. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val chapters = state.details?.chapters.orEmpty()
+    if (chapters.isEmpty()) return
+    val current = chapters.indexOfLast { it.startMs <= state.positionMs }.coerceAtLeast(0)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surfaceContainerLow,
+    ) {
+        Text(
+            "Chapters",
+            fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+        )
+        Text(
+            "${current + 1} of ${chapters.size}",
+            color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+        )
+        // Scrolls: a long chapter list must stay reachable in landscape, where the sheet is short.
+        LazyColumn(Modifier.height(340.dp)) {
+            itemsIndexed(chapters) { index, chapter ->
+                Box(Modifier.padding(horizontal = 12.dp)) {
+                    SheetRow(chapter.title, formatDuration(chapter.startMs), index == current) {
+                        state.seekTo(chapter.startMs)
+                        onDismiss()
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(20.dp)) }
         }
     }
 }
@@ -820,7 +888,7 @@ private fun qualityTag(height: Int): String? = when {
 }
 
 @Composable
-private fun QualityRow(title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit) {
+private fun SheetRow(title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
@@ -868,16 +936,36 @@ private fun GlassButton(
     size: Dp = 38.dp,
     iconSize: Dp = 22.dp,
     tinted: Boolean = true,
+    active: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val c = MaterialTheme.colorScheme
     Box(
         modifier = modifier
             .size(size)
             .pressable(enabled = enabled, onClick = onClick)
             .clip(CircleShape)
-            .background(if (tinted) Color.Black.copy(alpha = 0.38f) else Color.Black.copy(alpha = 0f)),
+            .background(
+                when {
+                    active -> c.primary
+                    tinted -> Color.Black.copy(alpha = 0.38f)
+                    else -> Color.Black.copy(alpha = 0f)
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, description, tint = Color.White, modifier = Modifier.size(iconSize)) }
+}
+
+/** A labelled pill in the controls' top row (chapters, speed, quality), the same glass as the buttons. */
+@Composable
+private fun ControlPill(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .pressable(enabled = enabled, onClick = onClick)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.38f))
+            .padding(horizontal = 11.dp, vertical = 7.dp),
+    ) { Text(label, color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Black) }
 }
 
 private const val SeekStepMs = 10_000L
@@ -969,6 +1057,9 @@ private fun SeekBurstPill(side: Int, seconds: Int, taps: Int, active: Boolean, f
 /**
  * Play/pause that changes shape with state: a squircle while playing, a circle when
  * paused (Material 3 Expressive shape morph). Shows a spinner while buffering.
+ *
+ * [filled] swaps in Apple's solid glyphs for the outlined ones — for the bare button in
+ * the mini-player, where nothing but the glyph carries the play/pause state.
  */
 @Composable
 fun MorphPlayButton(
@@ -978,6 +1069,7 @@ fun MorphPlayButton(
     container: Color,
     content: Color,
     enabled: Boolean = true,
+    filled: Boolean = false,
     backdrop: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -1000,7 +1092,10 @@ fun MorphPlayButton(
             CircularProgressIndicator(color = content, strokeWidth = 3.dp, modifier = Modifier.size(size * 0.42f))
         } else {
             Icon(
-                if (playing) SfIcons.Pause else SfIcons.Play,
+                when {
+                    playing -> if (filled) SfIcons.PauseFill else SfIcons.Pause
+                    else -> if (filled) SfIcons.PlayFill else SfIcons.Play
+                },
                 if (playing) "Pause" else "Play",
                 tint = content,
                 modifier = Modifier.size(size * 0.46f),

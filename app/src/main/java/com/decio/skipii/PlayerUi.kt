@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -84,6 +85,10 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import com.decio.skipii.icons.BitChordIcons
 import com.decio.skipii.icons.SfIcons
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
 
 // ── Geometry shared with the morph (MainActivity builds MorphGeometry from these) ──
 
@@ -96,6 +101,8 @@ private const val StatusBlackEnd = 0.9f
 internal val StageSideGap = 0.dp
 internal val StageRadius = 0.dp
 internal val MiniHeight = 70.dp
+/** The same bar folded into the glass nav's inline row, level with its tab pill. */
+internal val MiniHeightInline = 48.dp
 internal val MiniRadius = 24.dp
 internal val MiniThumbStart = 7.dp
 internal val MiniThumbWidth = 92.dp
@@ -126,7 +133,7 @@ fun PlayerScreen(
     onOpen: (VideoItem) -> Unit,
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
-    /** Room the floating player bar (the nav pill over the player) takes at the bottom. */
+    /** Room the nav pill takes at the bottom, so the player's list and toast clear it. */
     bottomClearance: androidx.compose.ui.unit.Dp,
 ) {
     val c = MaterialTheme.colorScheme
@@ -294,7 +301,7 @@ fun PlayerScreen(
                                 SubscribeButton(subscribed, onClick = state::toggleSubscribe)
                             }
                         }
-                        // Speed and audio only live in the player's bar now (PlayerBar.kt).
+                        // Speed, quality and audio only live on the video's own controls (VideoView.kt).
                         PlayerActions(state)
                         QueueCard(state, onOpen = { state.sheet = PlayerSheet.Queue })
                         CommentsCard(state.comments, onOpen = { state.sheet = PlayerSheet.Comments })
@@ -315,8 +322,8 @@ fun PlayerScreen(
                 }
             }
         }
-        // The page's bottom vignette, as on the tabs: the details dissolve behind the player
-        // bar instead of running hard into it. Drawn only, never touchable.
+        // The page's bottom vignette, as on the tabs: the details dissolve behind the nav
+        // pill instead of running hard into it. Drawn only, never touchable.
         val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
         Box(
             Modifier
@@ -679,25 +686,53 @@ private fun ActionMessage(state: PlayerState, modifier: Modifier) {
 
 // ── Mini player ────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
-fun MiniPlayer(state: PlayerState, onExpand: () -> Unit, modifier: Modifier = Modifier, showVideo: Boolean = true) {
+fun MiniPlayer(
+    state: PlayerState,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+    showVideo: Boolean = true,
+    shape: CornerBasedShape = RoundedCornerShape(MiniRadius),
+    /** The glass nav's inline form: 48dp, matching its tab pill, with a smaller slot. */
+    compact: Boolean = false,
+) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
-    val shape = RoundedCornerShape(MiniRadius)
+    // Liquid glass when the setting is on (the glass nav bar hands this component its
+    // own pill shape), haze when it is off. Either way the page shows through instead
+    // of the card sitting on a flat Material fill.
+    val glassOn = LocalLiquidGlassEnabled.current && isGlassSupported()
+    val haze = LocalAppHaze.current
+    val container = c.surfaceContainerHighest
+    val surface = when {
+        glassOn -> Modifier.liquidGlass(shape = shape)
+        haze != null -> Modifier
+            .background(container.copy(alpha = 0.72f), shape)
+            .hazeEffect(state = haze, style = HazeMaterials.regular(container.copy(alpha = 0.72f))) {
+                inputScale = HazeInputScale.Fixed(0.33f)
+            }
+            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
+        else -> Modifier.background(container, shape)
+    }
+    val thumbWidth = if (compact) 58.dp else MiniThumbWidth
+    val thumbHeight = if (compact) 34.dp else MiniThumbHeight
+    val thumbRadius = if (compact) 11.dp else MiniThumbRadius
+    val thumbStart = if (compact) 7.dp else MiniThumbStart
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(MiniHeight)
+            .height(if (compact) MiniHeightInline else MiniHeight)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
             .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
             .clip(shape)
-            .background(c.surfaceContainerHighest)
+            .then(surface)
     ) {
-        Row(Modifier.fillMaxSize().padding(start = MiniThumbStart, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize().padding(start = thumbStart, end = if (compact) 6.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // The live video, not a still. While the player is open or morphing, this slot
             // stays EMPTY: the shrinking video is on its way here, and a thumbnail already
             // sitting in the slot read as a second copy it was flying towards.
-            Box(Modifier.size(width = MiniThumbWidth, height = MiniThumbHeight).clip(RoundedCornerShape(MiniThumbRadius))) {
+            Box(Modifier.size(width = thumbWidth, height = thumbHeight).clip(RoundedCornerShape(thumbRadius))) {
                 if (showVideo) {
                     Box(Modifier.fillMaxSize().background(Color.Black))
                     Thumbnail(item.thumbnail, Modifier.fillMaxSize(), radius = 0)
@@ -711,48 +746,55 @@ fun MiniPlayer(state: PlayerState, onExpand: () -> Unit, modifier: Modifier = Mo
                     }
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            MiniDetails(state, interactive = true)
+            Spacer(Modifier.width(if (compact) 10.dp else 12.dp))
+            MiniDetails(state, interactive = true, compact = compact)
         }
     }
 }
 
 /**
- * Everything right of the mini-player's video: title, channel, play/pause, close, and the
- * progress bar. Shared by the real mini-player and the morph's look-alike ([interactive]
- * false: drawn only, touches go to the real one underneath).
+ * Everything right of the mini-player's video: the title, channel and play/pause.
+ * Shared by the real mini-player and the morph's look-alike ([interactive] false:
+ * drawn only, touches go to the real one underneath).
  */
 @Composable
-private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
+private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean, compact: Boolean = false) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
-    Box(Modifier.weight(1f).fillMaxHeight()) {
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(item.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.channel, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Spacer(Modifier.width(8.dp))
-            MorphPlayButton(
-                playing = state.isPlaying,
-                buffering = state.isBuffering,
-                size = 46.dp,
-                container = c.primary,
-                content = c.onPrimary,
-                enabled = interactive,
-                onClick = state::togglePlay,
+    val playSize = if (compact) 38.dp else 46.dp
+    Row(
+        modifier = Modifier.weight(1f).fillMaxHeight(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                item.title,
+                fontSize = if (compact) 13.sp else 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Box(Modifier.size(40.dp).pressable(enabled = interactive, onClick = state::close), contentAlignment = Alignment.Center) {
-                Icon(SfIcons.Close, "Close", tint = c.onSurfaceVariant)
-            }
+            Text(
+                item.channel,
+                fontSize = if (compact) 11.sp else 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = c.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        Box(
-            Modifier.align(Alignment.BottomStart).padding(end = 96.dp, bottom = 7.dp)
-                .fillMaxWidth().height(4.dp).clip(CircleShape).background(c.primary.copy(alpha = 0.18f)),
-        ) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(progress).clip(CircleShape).background(c.primary))
-        }
+        Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
+        MorphPlayButton(
+            playing = state.isPlaying,
+            buffering = state.isBuffering,
+            size = playSize,
+            // No disc behind it — the glyph alone, in the accent colour.
+            container = Color.Transparent,
+            content = c.primary,
+            filled = true,
+            enabled = interactive,
+            onClick = state::togglePlay,
+        )
     }
 }
 

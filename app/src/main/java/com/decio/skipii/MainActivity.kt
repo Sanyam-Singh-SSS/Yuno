@@ -6,7 +6,6 @@ import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.view.HapticFeedbackConstants
 import java.lang.ref.WeakReference
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -15,56 +14,36 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,9 +59,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -300,13 +277,7 @@ fun SkipiiApp() {
     // Registered last so it wins: in fullscreen, Back returns to the portrait player first.
     BackHandler(enabled = showFullscreen) { orientation.exitFullscreen() }
 
-    // The open player's bar (PlayerBar.kt): its tools card / quality list close on Back, on a
-    // tap anywhere else, and whenever the player stops being the open portrait page.
-    val playerBar = remember { PlayerBarState(scope) }
-    BackHandler(enabled = playerBar.isOpen && playerOpen && !showFullscreen) { playerBar.closeAll() }
-    LaunchedEffect(playerOpen, showFullscreen, player.sheet) {
-        if (!playerOpen || showFullscreen || player.sheet != null) playerBar.closeAll()
-    }
+    // The open player's controls live on the video (VideoView.kt); the nav pill stays the tabs.
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val density = LocalDensity.current
@@ -559,7 +530,7 @@ fun SkipiiApp() {
                             // Once a gesture drives the morph it stays on the morph: switching to
                             // the dismiss slide mid-gesture (up a little, then back down) never
                             // settled the morph, which then stayed "dragging" at its mini end —
-                            // a dead mini-player and live player-bar buttons under the tabs.
+                            // a dead mini-player under the tabs.
                             if (!morph.dragging && morph.progress.value <= 0f && (delta > 0f || dismiss.value > 0f)) {
                                 scope.launch { dismiss.snapTo((dismiss.value + delta).coerceAtLeast(0f)) }
                             } else {
@@ -592,32 +563,19 @@ fun SkipiiApp() {
                 onOpen = player::open,
                 onCollapse = { player.expanded = false },
                 onFullscreen = { toggleFullscreen() },
-                bottomClearance = stackBottom + NavHeight + PlayerBarRaise + 16.dp,
+                bottomClearance = stackBottom + NavHeight + 16.dp,
             )
         }
 
-        // Over the player: while it's open the nav pill is the player's own bar (NavBar.kt).
-        // It steps down out of the way of the comments panel (its composer sits there).
-        val barAside by animateFloatAsState(
+        // The nav pill steps down out of the way of the comments panel (its composer sits there).
+        val navAside by animateFloatAsState(
             if (player.sheet == PlayerSheet.Comments && playerOpen) 1f else 0f,
-            if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "barAside",
+            if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "navAside",
         )
-        // A tap anywhere outside the open card / list closes it (and goes no further).
-        if (playerBar.isOpen && playerOpen) {
-            Box(
-                Modifier.fillMaxSize().pointerInput(playerBar) {
-                    awaitEachGesture {
-                        awaitFirstDown().consume()
-                        playerBar.closeAll()
-                        do {
-                            val event = awaitPointerEvent()
-                            event.changes.forEach { it.consume() }
-                        } while (event.changes.any { it.pressed })
-                    }
-                },
-            )
-        }
         val onSelectTab: (Tab) -> Unit = { selected ->
+            // The tabs stay live while the player is open (the pill is never its bar), so a tap
+            // on one folds the player back into the mini-player first.
+            player.expanded = false
             when {
                 selected == tab && openSearch -> openSearch = false
                 selected == tab && openChannel != null -> openChannel = null
@@ -652,25 +610,20 @@ fun SkipiiApp() {
             NavPill(
                 selected = tab,
                 onSelect = onSelectTab,
-                player = player,
-                morph = morph,
-                controlsActive = player.current != null && (player.expanded || morph.dragging),
-                bar = playerBar,
-                onFullscreen = { toggleFullscreen() },
                 shorts = { shortsMorph.value },
                 tabsEnabled = !shortsShown,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom)
                     .graphicsLayer {
-                        translationY = barAside * (NavHeight + PlayerBarRaise + stackBottom + 24.dp).toPx()
-                        alpha = 1f - barAside
+                        translationY = navAside * (NavHeight + stackBottom + 24.dp).toPx()
+                        alpha = 1f - navAside
                     },
             )
         }
 
         // The tab bar's Shorts form: ‹ and the glass pill, out of the tab bar's own spot. It steps
-        // down out of the way of the comments panel (its composer sits there), as the player's bar does.
+        // down out of the way of the comments panel (its composer sits there), as the nav pill does.
         if (shortsShown) {
             val shortsAside by animateFloatAsState(
                 if (shorts.commentsOpen || openChannel != null) 1f else 0f,
@@ -713,6 +666,8 @@ fun SkipiiApp() {
 
         when (player.sheet) {
             PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Speed -> SpeedSheet(player, onDismiss = { player.sheet = null })
+            PlayerSheet.Chapters -> ChaptersSheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Comments -> Unit // a panel inside the player (PlayerScreen)
             PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
             null -> Unit

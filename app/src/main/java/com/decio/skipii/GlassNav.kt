@@ -2,57 +2,32 @@
 
 package com.decio.skipii
 
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.decio.skipii.floatingtabbar.FloatingTabBar
 import com.decio.skipii.floatingtabbar.FloatingTabBarDefaults
 import com.decio.skipii.floatingtabbar.FloatingTabBarScrollConnection
-import com.decio.skipii.icons.SfIcons
 
 private val PillInset = 4.dp
 private val TabVerticalPadding = 6.5.dp
 private val TabIconSize = 28.dp
 private val TabIconLabelGap = 1.dp
-private val AccessoryArt = 30.4.dp
-private val AccessoryArtCorner = 5.7.dp
 
 /**
  * The collapsed row's margin at either side of the screen, and its items'
@@ -97,30 +72,33 @@ fun GlassNavBar(
         scrollConnection = scrollConnection,
         modifier = modifier.fillMaxWidth(),
         tabBarContentModifier = glassSurface,
-        inlineAccessory = song?.let { item ->
-            { accessoryModifier, _ ->
-                GlassNowPlaying(
-                    item = item,
-                    player = player,
-                    isInline = true,
-                    contentColor = contentColor,
+        inlineAccessory = if (song != null) {
+            { accessoryModifier, scope ->
+                MiniPlayer(
+                    state = player,
                     onExpand = onExpandPlayer,
-                    modifier = accessoryModifier.then(glassSurface()),
+                    modifier = accessoryModifier,
+                    shape = pillShape,
+                    // Only the content the fold is settling on may hold the app's single
+                    // video surface: AnimatedContent composes the outgoing row too while
+                    // it animates, and a second caller would steal it and dispose it with
+                    // the exiting content, leaving the bar on a still frame.
+                    showVideo = scope.transition.targetState == EnterExitState.Visible,
+                    compact = true,
                 )
             }
-        },
-        expandedAccessory = song?.let { item ->
-            { accessoryModifier, _ ->
-                GlassNowPlaying(
-                    item = item,
-                    player = player,
-                    isInline = false,
-                    contentColor = contentColor,
+        } else null,
+        expandedAccessory = if (song != null) {
+            { accessoryModifier, scope ->
+                MiniPlayer(
+                    state = player,
                     onExpand = onExpandPlayer,
-                    modifier = accessoryModifier.fillMaxWidth().then(glassSurface()),
+                    modifier = accessoryModifier.fillMaxWidth(),
+                    shape = pillShape,
+                    showVideo = scope.transition.targetState == EnterExitState.Visible,
                 )
             }
-        },
+        } else null,
         colors = FloatingTabBarDefaults.colors(
             backgroundColor = Color.Transparent,
             accessoryBackgroundColor = Color.Transparent,
@@ -178,99 +156,3 @@ fun GlassNavBar(
     }
 }
 
-@Composable
-private fun GlassNowPlaying(
-    item: VideoItem,
-    player: PlayerState,
-    isInline: Boolean,
-    contentColor: Color,
-    onExpand: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val pressSource = remember { MutableInteractionSource() }
-    val isPressed by pressSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 1.04f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "accessoryPressScale",
-    )
-    val glyphSlot = if (isInline) 32.dp else 40.dp
-    val glyphSize = if (isInline) 24.dp else 29.dp
-    // BitChord's accessory type, measured off Apple's: titleMedium and
-    // bodyMedium with the line height left to the font, so the two lines come to
-    // the same compact height as its bar rather than Material's default 24sp.
-    val titleStyle = MaterialTheme.typography.titleMedium.copy(
-        fontSize = 13.sp,
-        fontWeight = FontWeight.W700,
-        letterSpacing = 0.15.sp,
-        lineHeight = TextUnit.Unspecified,
-    )
-    val artistStyle = MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 12.sp,
-        letterSpacing = 0.35.sp,
-        lineHeight = TextUnit.Unspecified,
-    )
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
-            .then(modifier)
-            .clickable(interactionSource = pressSource, indication = null, onClick = onExpand),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = if (isInline) 8.dp else 12.dp, top = 4.dp, bottom = 4.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(AccessoryArt)
-                    .clip(RoundedCornerShape(AccessoryArtCorner))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                AsyncImage(
-                    model = item.thumbnail,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            Spacer(Modifier.width(if (isInline) 8.dp else 9.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    item.title,
-                    style = titleStyle,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    item.channel,
-                    style = artistStyle,
-                    color = contentColor.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (player.isBuffering && !player.isPlaying) {
-                Box(Modifier.size(glyphSlot), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(
-                        color = contentColor,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(if (isInline) 18.dp else 20.dp),
-                    )
-                }
-            } else {
-                IconButton(onClick = player::togglePlay, modifier = Modifier.size(glyphSlot)) {
-                    Icon(
-                        imageVector = if (player.isPlaying) SfIcons.Pause else SfIcons.Play,
-                        contentDescription = if (player.isPlaying) "Pause" else "Play",
-                        tint = contentColor,
-                        modifier = Modifier.size(glyphSize),
-                    )
-                }
-            }
-        }
-    }
-}

@@ -78,13 +78,13 @@ import kotlin.math.abs
 import com.decio.skipii.icons.SfIcons
 
 /**
- * The speed ruler (0.5.34: shown inside the player's bar, PlayerBar.kt, picked from its tools):
+ * The speed ruler, opened from the video controls' speed pill (VideoView.kt's SpeedSheet):
  * the speed in large type, a ruler dial to flick through 0.5–3× (every 0.05× is a step; it lands
  * on one), "Remember for every video" and a 1× reset. Approved mockup: docs/design (Drive)
- * "Skipii - Speed and Audio Only, Option B v2". [inBar]: no card of its own, on the bar's tone.
+ * "Skipii - Speed and Audio Only, Option B v2".
  */
 @Composable
-internal fun SpeedPanelContent(state: PlayerState, inBar: Boolean = false) {
+internal fun SpeedPanelContent(state: PlayerState) {
     val c = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val view = LocalView.current
@@ -129,10 +129,9 @@ internal fun SpeedPanelContent(state: PlayerState, inBar: Boolean = false) {
     }
     fun glideTo(speed: Float) = drive { value.animateTo(speed, spring(dampingRatio = 0.85f, stiffness = 380f)) }
 
-    val panel = if (inBar) c.surfaceVariant else c.surfaceContainer
+    val panel = c.surfaceContainer
     Column(
-        if (inBar) Modifier.fillMaxWidth().padding(top = 14.dp)
-        else Modifier
+        Modifier
             .padding(top = 12.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))

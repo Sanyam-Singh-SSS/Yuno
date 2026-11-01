@@ -34,6 +34,7 @@ import com.composables.sfsymbols.monochrome.SFNosign
 import com.composables.sfsymbols.monochrome.SFPaintpalette
 import com.composables.sfsymbols.monochrome.SFPaperplaneFill
 import com.composables.sfsymbols.monochrome.SFPause
+import com.composables.sfsymbols.monochrome.SFPauseFill
 import com.composables.sfsymbols.monochrome.SFPersonBadgePlus
 import com.composables.sfsymbols.monochrome.SFPersonCropCircleBadgeMinus
 import com.composables.sfsymbols.monochrome.SFPip
@@ -112,6 +113,7 @@ import com.composables.sfsymbols.monochrome.SFPersonCropCircleFill
 import com.composables.sfsymbols.monochrome.SFPin
 import com.composables.sfsymbols.monochrome.SFPlay
 import com.composables.sfsymbols.monochrome.SFPlayCircle
+import com.composables.sfsymbols.monochrome.SFPlayFill
 import com.composables.sfsymbols.monochrome.SFPlus
 import com.composables.sfsymbols.monochrome.SFPuzzlepieceExtension
 import com.composables.sfsymbols.monochrome.SFRecordCircle
@@ -257,6 +259,7 @@ object SfIcons {
     val Pencil: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPencil) }
     val Pin: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPin) }
     val Play: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPlay) }
+    val PlayFill: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPlayFill) }
     val PlayLast: ImageVector by lazy { bold(SfSymbols.Monochrome.SFTextLineLastAndArrowtriangleForward) }
     val PlayNext: ImageVector by lazy { bold(SfSymbols.Monochrome.SFTextLineFirstAndArrowtriangleForward) }
     val Radio: ImageVector by lazy { bold(SfSymbols.Monochrome.SFDotRadiowavesLeftAndRight) }
@@ -278,6 +281,7 @@ object SfIcons {
     val FastRewind: ImageVector by lazy { bold(SfSymbols.Monochrome.SFBackward) }
     val Forward10: ImageVector by lazy { bold(SfSymbols.Monochrome.SF10ArrowTriangleheadClockwise) }
     val Pause: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPause) }
+    val PauseFill: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPauseFill) }
     val Pip: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPip) }
     val Replay10: ImageVector by lazy { bold(SfSymbols.Monochrome.SF10ArrowTriangleheadCounterclockwise) }
     val Shorts: ImageVector by lazy { bold(SfSymbols.Monochrome.SFPlayRectangleFill) }

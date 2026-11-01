@@ -75,8 +75,6 @@ class PlayerState(private val scope: CoroutineScope) {
         internal set
     private var resumePlayAfterScrub = false
     private var speedBeforeHold: Float? = null
-    var videoControlsVisible by mutableStateOf(false)
-        internal set
 
 
     init {
@@ -302,11 +300,6 @@ class PlayerState(private val scope: CoroutineScope) {
         player.addMediaItem(mediaItemFor(item))
         actionMessage = "Added to queue"
         continueIfEnded(player)
-    }
-
-    /** The bar's Next: the queue's first video (the bar only offers it while the queue has one). */
-    fun playNextUp() {
-        if (queue.isNotEmpty()) playFromQueue(0)
     }
 
     /** The chapter playing at [ms], or null when the video has none. */
@@ -858,6 +851,6 @@ fun rememberPlayerState(): PlayerState {
     return state
 }
 
-enum class PlayerSheet { Quality, Comments, Queue }
+enum class PlayerSheet { Quality, Speed, Chapters, Comments, Queue }
 
 private const val TAG = "Skipii"
