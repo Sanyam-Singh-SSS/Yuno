@@ -51,7 +51,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -326,7 +325,6 @@ fun SkipiiApp() {
         if (tab == Tab.Shorts) shortsMorph.animateTo(1f, if (reduced) snap() else tween(ShortsEnterMs, easing = androidx.compose.animation.core.LinearEasing))
         else shortsMorph.animateTo(0f, if (reduced) snap() else tween(ShortsExitMs, easing = ShortsExitEasing))
     }
-    val shortsShown by remember { derivedStateOf { shortsMorph.value > 0f } }
     SideEffect {
         StatusBarOverVideo.shorts = tab == Tab.Shorts && openChannel == null
         shorts.onMessage = { player.actionMessage = it }
@@ -356,6 +354,8 @@ fun SkipiiApp() {
 
     val hazeState = remember { HazeState() }
     val navScroll = rememberFloatingTabBarScrollConnection()
+    // Shorts is a vertical swipe, not a list: that swipe must not fold the glass bar.
+    LaunchedEffect(tab) { if (tab == Tab.Shorts) navScroll.expand() }
     val windowBackground = c.surface
     val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
         {
@@ -366,7 +366,8 @@ fun SkipiiApp() {
     val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
     val pageSample = Modifier
         .hazeSource(hazeState)
-        .then(if (glassOn) Modifier.layerBackdrop(appBackdrop).nestedScroll(navScroll) else Modifier)
+        .then(if (glassOn) Modifier.layerBackdrop(appBackdrop) else Modifier)
+        .then(if (glassOn && tab != Tab.Shorts) Modifier.nestedScroll(navScroll) else Modifier)
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
         val stageFloor = maxOf(StageMinAspect, constraints.maxWidth / (constraints.maxHeight * StageMaxHeightShare))
         SideEffect { player.stageFloor = stageFloor }
@@ -406,7 +407,13 @@ fun SkipiiApp() {
                     scrollToTop = scrollToTop[Tab.Subscriptions] ?: 0,
                     onOpenAllSubscriptions = { openAllSubscriptions = true },
                 )
-                Tab.Shorts -> ShortsScreen(shorts, { shortsMorph.value }, overlayBottom = stackBottom + GlassHeight + 16.dp)
+                Tab.Shorts -> ShortsScreen(
+                    shorts,
+                    progress = { shortsMorph.value },
+                    navClearance = stackBottom + NavHeight,
+                    overlayBottom = stackBottom + NavHeight + 28.dp,
+                    onChannel = ::showChannel,
+                )
                 Tab.Library -> LibraryScreen(
                     lib, contentPadding, onOpen = player::open, onOpenPlaylist = { openPlaylist = it },
                     onSearch = { openSearch = true },
@@ -510,7 +517,7 @@ fun SkipiiApp() {
 
         // The nav pill steps down out of the way of the comments panel (its composer sits there).
         val navAside by animateFloatAsState(
-            if (player.sheet == PlayerSheet.Comments && playerOpen) 1f else 0f,
+            if ((player.sheet == PlayerSheet.Comments && playerOpen) || shorts.commentsOpen) 1f else 0f,
             if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "navAside",
         )
         val onSelectTab: (Tab) -> Unit = { selected ->
@@ -532,7 +539,7 @@ fun SkipiiApp() {
             }
         }
         val shownTabs = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
-        val glassChrome = glassOn && !shortsShown
+        val glassChrome = glassOn
         if (glassChrome) {
             GlassNavBar(
                 tabs = shownTabs,
@@ -551,7 +558,7 @@ fun SkipiiApp() {
                         alpha = 1f - navAside
                     },
             )
-        } else if (!shortsShown) {
+        } else {
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -578,39 +585,15 @@ fun SkipiiApp() {
                 NavPill(
                     selected = tab,
                     onSelect = onSelectTab,
-                    shorts = { shortsMorph.value },
+                    shorts = { 0f },
                     tabsEnabled = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
 
-        // The tab bar's Shorts form: ‹ and the glass pill, out of the tab bar's own spot. It steps
-        // down out of the way of the comments panel (its composer sits there), as the nav pill does.
-        if (shortsShown) {
-            val shortsAside by animateFloatAsState(
-                if (shorts.commentsOpen || openChannel != null) 1f else 0f,
-                if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "shortsAside",
-            )
-            ShortsBar(
-                shorts,
-                progress = { shortsMorph.value },
-                onBack = { tab = shortsFrom },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(start = 16.dp, end = 16.dp, bottom = stackBottom)
-                    .widthIn(max = NavWidth)
-                    .fillMaxWidth()
-                    .height(NavHeight)
-                    .graphicsLayer {
-                        translationY = shortsAside * (NavHeight + stackBottom + 24.dp).toPx()
-                        alpha = 1f - shortsAside
-                    },
-            )
-        }
-
-        if (shortsShown) ShortsChannelMenu(shorts, bottom = stackBottom + GlassHeight + 10.dp, onChannel = ::showChannel)
-
+        // Shorts keeps this same bar. Like, comments, share and the channel sit on the
+        // video (Shorts.kt), and the progress line sits just above the bar.
         if (accountSheet) {
             AccountSheet(
                 onSignIn = { signingIn = true },

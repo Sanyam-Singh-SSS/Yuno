@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,7 +82,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -115,13 +115,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
+import com.decio.skipii.icons.BitChordIcons
 import com.decio.skipii.icons.SfIcons
 
 // Shorts (0.5.50, Derek, 2026-10-28; a Shorts tab was first proposed by essopsp in PR #10).
 // A full-bleed vertical feed on its own players: the app's video pauses while it's open and
-// comes back when it's left. Entering it turns the tab bar into a dark frosted-glass bar —
-// ‹ on its own, then Like · Comments · Share · channel (tap to subscribe) — Derek's mockup.
+// comes back when it's left. The normal tab bar stays over it. Like, comments, share and the
+// channel sit down the right side, and the progress line sits just above the bar.
 
 /** The glass bar: 50 dp tall, ‹ 50 + 8 + the pill 236, centred; its bottom is the tab bar's. */
 internal val GlassHeight = 50.dp
@@ -855,7 +855,7 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
     internal fun onFrameDrawn(view: TextureView, page: Int) {
         if (view.width <= 0 || view.height <= 0) return
         val rect = videoRects[page] ?: return
-        val underBar = rect.top < barBottom && rect.bottom > barTop
+        val underBar = channelMenu || (rect.top < barBottom && rect.bottom > barTop)
         if (!underBar && glassFrames.containsKey(page)) return
         val now = SystemClock.uptimeMillis()
         if (now - (sampledAt[page] ?: 0L) < 33) return
@@ -1089,16 +1089,22 @@ private class CappedLoadControl(
 // ── The page ────────────────────────────────────────────────────────────────
 
 /**
- * The Shorts tab: a vertical pager of full-bleed shorts (top to bottom, under the system bars).
- * Tap pauses / plays. [overlayBottom] keeps the channel and title clear of the glass bar.
+ * The Shorts tab: a vertical pager of full-bleed shorts. The app's normal tab bar stays
+ * over it. Like, comments, share and the channel sit on the right; the progress line
+ * sits just above the bar. [overlayBottom] keeps the title clear of that line.
  */
 @Composable
-fun ShortsScreen(shorts: ShortsState, progress: () -> Float, overlayBottom: Dp) {
+fun ShortsScreen(
+    shorts: ShortsState,
+    progress: () -> Float,
+    navClearance: Dp,
+    overlayBottom: Dp,
+    onChannel: (String) -> Unit,
+) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Box(
             Modifier
                 .fillMaxSize()
-                // The picture settles in as the bar turns to glass.
                 .graphicsLayer {
                     val s = lerpF(1.07f, 1f, decel(ramp(progress(), 0f, 0.8f)))
                     scaleX = s
@@ -1111,28 +1117,20 @@ fun ShortsScreen(shorts: ShortsState, progress: () -> Float, overlayBottom: Dp) 
                 else -> CircularProgressIndicator(color = Ink, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(36.dp))
             }
         }
-        // How far in: a hairline near the screen's bottom edge (the glass bar holds only buttons).
-        // Kept inside the display's rounded corners and a little off the edge, where the phone's
-        // bezel hid its ends (Derek, 2026-10-29).
-        val view = LocalView.current
+        // Just above the tab bar, inset from the sides.
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
+                .padding(bottom = navClearance + 8.dp)
                 .fillMaxWidth()
-                .height(ProgressLift + ProgressThickness)
-                .graphicsLayer { alpha = ramp(progress(), 0.5f, 1f) }
+                .height(ProgressThickness)
+                .graphicsLayer { alpha = if (shorts.commentsOpen) 0f else 1f }
                 .drawBehind {
-                    val thick = ProgressThickness.toPx()
-                    val lift = ProgressLift.toPx()
-                    val r = bottomCornerRadius(view).toFloat()
-                    // Where the corner's curve leaves the screen visible at the line's height.
-                    val clear = if (r > lift) r - sqrt(r * r - (r - lift) * (r - lift)) else 0f
-                    val inset = clear + ProgressMargin.toPx()
+                    val inset = 16.dp.toPx()
                     val w = (size.width - 2 * inset).coerceAtLeast(0f)
-                    val top = size.height - lift - thick
-                    val ends = CornerRadius(thick / 2f)
-                    drawRoundRect(Color.White.copy(alpha = 0.25f), Offset(inset, top), Size(w, thick), ends)
-                    drawRoundRect(Ink, Offset(inset, top), Size(w * shorts.progress, thick), ends)
+                    val ends = CornerRadius(size.height / 2f)
+                    drawRoundRect(Color.White.copy(alpha = 0.28f), Offset(inset, 0f), Size(w, size.height), ends)
+                    drawRoundRect(Ink, Offset(inset, 0f), Size(w * shorts.progress, size.height), ends)
                 },
         )
         if (shorts.commentsOpen) {
@@ -1140,22 +1138,72 @@ fun ShortsScreen(shorts: ShortsState, progress: () -> Float, overlayBottom: Dp) 
                 CommentsPanel(shorts.comments, partialTop = maxHeight * 0.42f, onClose = { shorts.commentsOpen = false })
             }
         }
+        ShortsChannelMenu(shorts, bottom = overlayBottom + 52.dp, onChannel = onChannel)
     }
 }
 
 private val ProgressThickness = 2.5.dp
-/** Off the screen's bottom edge, and in from the corners' curve by [ProgressMargin]. */
-private val ProgressLift = 4.dp
-private val ProgressMargin = 12.dp
 
-/** The display's bottom corner radius in px (Android 12+); 0 when unknown or square. */
-private fun bottomCornerRadius(view: android.view.View): Int {
-    if (android.os.Build.VERSION.SDK_INT < 31) return 0
-    val insets = view.rootWindowInsets ?: return 0
-    return maxOf(
-        insets.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0,
-        insets.getRoundedCorner(android.view.RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0,
-    )
+/** Like, comments, share and the channel, down the right edge above the tab bar. */
+@Composable
+private fun ShortsRail(shorts: ShortsState, page: Int, enabled: Boolean, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val item = shorts.items.getOrNull(page) ?: return
+    val details = shorts.details[item.id]
+    val account = shorts.accountStates[item.id]
+    val liked = account?.like == LikeStatus.Like
+    val subscribed = account?.subscribed == true
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        RailButton(enabled, "Like", onClick = shorts::toggleLike) {
+            key(item.id, account != null) {
+                FlourishIcon(
+                    if (liked) SfIcons.ThumbUpFill else SfIcons.ThumbUp,
+                    null, active = liked, kind = Flourish.Pop, tint = Ink, size = 30.dp,
+                )
+            }
+        }
+        RailButton(enabled, "Comments", onClick = shorts::openComments) {
+            Icon(BitChordIcons.Lyrics, contentDescription = null, tint = Ink, modifier = Modifier.size(28.dp))
+        }
+        RailButton(enabled, "Share", onClick = {
+            shareLink(context, "https://youtube.com/shorts/${item.id}", details?.item?.title ?: "")
+        }) {
+            Icon(SfIcons.Share, contentDescription = null, tint = Ink, modifier = Modifier.size(28.dp))
+        }
+        Box(Modifier.size(48.dp).pressable(enabled = enabled, onClick = shorts::toggleChannelMenu), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp)) {
+                ChannelAvatar(details?.item?.avatar, details?.item?.channel.orEmpty(), size = 40)
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 3.dp, y = 2.dp)
+                        .size(16.dp)
+                        .squishOn(subscribed)
+                        .background(Ink, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (subscribed) CheckGlyph else PlusGlyph,
+                        contentDescription = if (subscribed) "Subscribed" else "Subscribe",
+                        tint = Color(0xFF141218),
+                        modifier = Modifier.size(11.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailButton(enabled: Boolean, label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier.size(48.dp).pressable(enabled = enabled, onClick = onClick).semanticsLabel(label),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 @Composable
@@ -1208,7 +1256,7 @@ private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
         )
         if (details != null) {
             val shade = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.3f), Offset(0f, 2f), 4f))
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 24.dp, bottom = overlayBottom)) {
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 84.dp, bottom = overlayBottom)) {
                 Text(details.item.channel, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = shade)
                 if (details.item.title.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -1226,9 +1274,15 @@ private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
         }
         val pausedAlpha by animateFloatAsState(if (onScreen && shorts.userPaused) 1f else 0f, tween(160), label = "shortPaused")
         Icon(
-            SfIcons.Play, contentDescription = null, tint = Ink,
-            modifier = Modifier.align(Alignment.Center).size(72.dp).graphicsLayer { alpha = pausedAlpha * 0.9f },
+            SfIcons.PlayFill, contentDescription = null, tint = Ink,
+            modifier = Modifier.align(Alignment.Center).size(56.dp).graphicsLayer { alpha = pausedAlpha * 0.9f },
         )
+        if (!shorts.commentsOpen) {
+            ShortsRail(
+                shorts, page, enabled = onScreen,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = overlayBottom),
+            )
+        }
     }
 }
 
@@ -1554,9 +1608,9 @@ private val MenuTint = Color(0xFF252525).copy(alpha = 0.62f)
 
 /**
  * The channel button's card (Derek, 2026-10-29: "two options, one to subscribe, one to go to the
- * channel"): the same dark frosted glass as the bar, rising from the button, its right edge on
- * the pill's. The channel's name, then Subscribe / Unsubscribe and Go to channel. A tap anywhere
- * else, Back or the next short closes it. [bottom] is the glass bar's top plus a gap.
+ * channel"): the same dark frosted glass, rising from the channel picture on the right.
+ * The channel's name, then Subscribe / Unsubscribe and Go to channel. A tap anywhere
+ * else, Back or the next short closes it. [bottom] sits the card just above that picture.
  */
 @Composable
 fun ShortsChannelMenu(shorts: ShortsState, bottom: Dp, onChannel: (String) -> Unit) {
@@ -1573,7 +1627,7 @@ fun ShortsChannelMenu(shorts: ShortsState, bottom: Dp, onChannel: (String) -> Un
     val account = id?.let { shorts.accountStates[it] }
     val subscribed = account?.subscribed == true
     val density = LocalDensity.current
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
         // Outside the card: any touch only closes it (the short underneath doesn't see it). A layer
         // BEHIND the card, not around it: around it, it saw the card's own taps first and closed
         // the card on touch-down, so Subscribe / Go to channel never got their tap (Derek, 2026-10-29).
@@ -1591,15 +1645,11 @@ fun ShortsChannelMenu(shorts: ShortsState, bottom: Dp, onChannel: (String) -> Un
                 },
             )
         }
-        // Right edge on the pill's: the bar's ‹ + gap + pill, centred in the tab bar's slot.
-        val slot = minOf(maxWidth - 32.dp, NavWidth)
-        val group = BackWidth + GlassGap + minOf(PillWidth, slot - BackWidth - GlassGap)
-        val end = (maxWidth - group) / 2
         var origin by remember { mutableStateOf(Offset.Zero) }
         Column(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = end, bottom = bottom)
+                .padding(end = 8.dp, bottom = bottom)
                 .width(MenuWidth)
                 .onGloballyPositioned { origin = it.positionInRoot() }
                 .graphicsLayer {

@@ -67,7 +67,7 @@ fun GlassNavBar(
     val haptics = rememberBarHaptics()
     val currentOnTabSelected by rememberUpdatedState(onTabSelected)
     val glassSurface: @Composable () -> Modifier = { Modifier.liquidGlass(shape = pillShape) }
-    val song = player.current
+    val song = if (selected == Tab.Shorts) null else player.current
 
     FloatingTabBar(
         selectedTabKey = selected,
