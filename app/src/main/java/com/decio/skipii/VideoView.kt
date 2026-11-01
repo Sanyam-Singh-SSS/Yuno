@@ -198,31 +198,71 @@ fun VideoContent(
                 if (portraitEdgeScrub && down.position.y >= size.height - EdgeScrubTouchPadAbove.roundToPx()) {
                     return@awaitEachGesture
                 }
-                down.consume()
                 if (!currentInteractive) {
+                    down.consume()
                     waitForUpOrCancellation()
                     currentInactiveTap()
                     return@awaitEachGesture
                 }
                 if (state.error != null) {
+                    down.consume()
                     waitForUpOrCancellation()
                     return@awaitEachGesture
                 }
-                val upEarly = withTimeoutOrNull(holdSpeedMs) { waitForUpOrCancellation() }
-                if (upEarly == null) {
+                // A vertical drag belongs to the stage's sheet scroll, the same
+                // one the title uses. Taking it here measured the moving picture
+                // and shook the player. A finger inside the slop is still a tap,
+                // and one that holds is still 2×.
+                val slop = viewConfiguration.touchSlop
+                var mode = 0
+                val upOrHold = withTimeoutOrNull(holdSpeedMs) {
+                    var latest = down
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull latest
+                        if (change.pressed && mode == 0) {
+                            val moved = change.position - down.position
+                            if (moved.getDistance() >= slop) {
+                                if (kotlin.math.abs(moved.y) > kotlin.math.abs(moved.x)) {
+                                    mode = 1
+                                    return@withTimeoutOrNull change
+                                } else {
+                                    mode = 2
+                                }
+                            }
+                        }
+                        if (mode != 0) change.consume()
+                        latest = change
+                        if (!change.pressed) return@withTimeoutOrNull change
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    latest
+                }
+                if (mode == 1) return@awaitEachGesture
+                if (mode == 2) {
+                    waitForUpOrCancellation()
+                    return@awaitEachGesture
+                }
+                down.consume()
+                val up = upOrHold
+                if (up == null) {
                     seekWindow?.cancel()
                     if (!state.scrubDragging && state.beginHoldSpeed()) {
                         currentView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                         controlsVisible = false
                         burstActive = false
-                        waitForUpOrCancellation()?.consume()
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            change.consume()
+                            if (!change.pressed) break
+                        }
                         state.endHoldSpeed()
                     } else {
                         waitForUpOrCancellation()?.consume()
                     }
                     return@awaitEachGesture
                 }
-                val up = upEarly
                 up.consume()
                 val x = up.position.x / size.width
                 val side = if (x < 0.4f) -1 else if (x > 0.6f) 1 else 0

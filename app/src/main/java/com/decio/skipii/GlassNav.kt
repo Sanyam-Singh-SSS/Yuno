@@ -56,6 +56,8 @@ fun GlassNavBar(
     scrollConnection: FloatingTabBarScrollConnection,
     player: PlayerState,
     onExpandPlayer: () -> Unit,
+    dock: PlayerDock? = null,
+    pull: MiniPlayerPull? = null,
     modifier: Modifier = Modifier,
 ) {
     val pillShape = remember { RoundedCornerShape(percent = 50) }
@@ -74,28 +76,34 @@ fun GlassNavBar(
         tabBarContentModifier = glassSurface,
         inlineAccessory = if (song != null) {
             { accessoryModifier, scope ->
+                val visible = scope.transition.targetState == EnterExitState.Visible
                 MiniPlayer(
                     state = player,
                     onExpand = onExpandPlayer,
-                    modifier = accessoryModifier,
+                    // The pull lifts the pill. It has to sit outside the accessory's clip,
+                    // or the top of the bar is cut off as the finger rises (BitChord puts
+                    // the gesture on the outside of the glass).
+                    modifier = Modifier.miniPlayerPullGestures(pull).then(accessoryModifier),
                     shape = pillShape,
-                    // Only the content the fold is settling on may hold the app's single
-                    // video surface: AnimatedContent composes the outgoing row too while
-                    // it animates, and a second caller would steal it and dispose it with
-                    // the exiting content, leaving the bar on a still frame.
-                    showVideo = scope.transition.targetState == EnterExitState.Visible,
+                    showVideo = visible && !player.expanded,
                     compact = true,
+                    // Only the row the fold is settling on reports where the artwork lands.
+                    dock = if (visible) dock else null,
+                    pull = null,
                 )
             }
         } else null,
         expandedAccessory = if (song != null) {
             { accessoryModifier, scope ->
+                val visible = scope.transition.targetState == EnterExitState.Visible
                 MiniPlayer(
                     state = player,
                     onExpand = onExpandPlayer,
-                    modifier = accessoryModifier.fillMaxWidth(),
+                    modifier = Modifier.miniPlayerPullGestures(pull).fillMaxWidth().then(accessoryModifier),
                     shape = pillShape,
-                    showVideo = scope.transition.targetState == EnterExitState.Visible,
+                    showVideo = visible && !player.expanded,
+                    dock = if (visible) dock else null,
+                    pull = null,
                 )
             }
         } else null,

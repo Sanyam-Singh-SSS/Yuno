@@ -1,5 +1,6 @@
 package com.decio.skipii
 
+import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -7,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -53,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +66,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -74,6 +81,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.exp
 import androidx.compose.ui.graphics.lerp as lerpColor
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -121,15 +131,22 @@ internal const val StageMaxAspect = 2.4f
  */
 internal const val StageMaxHeightShare = 0.6f
 
-/** Morph progress after which the details and tint start fading in (tuning dial). */
-private const val DetailsFadeStart = 0.55f
+/** How much of the open the rest of the page waits before it starts to appear (BitChord). */
+private const val DOCK_FADE_LEAD = 0.15f
+
+/** 0 at the mini player, 1 fully open. The page stays clear for the first stretch. */
+private fun dockFade(open: Float): Float {
+    if (open >= 1f) return 1f
+    return ((open - DOCK_FADE_LEAD) / (1f - DOCK_FADE_LEAD)).coerceIn(0f, 1f).coerceAtLeast(1f / 255f)
+}
 
 // ── Full player (portrait) ─────────────────────────────────────────────────────
 
 @Composable
 fun PlayerScreen(
     state: PlayerState,
-    morph: PlayerMorph,
+    sheetMotion: PlayerSheetMotion,
+    dock: PlayerDock,
     onOpen: (VideoItem) -> Unit,
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
@@ -138,13 +155,10 @@ fun PlayerScreen(
 ) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
-    // Collapsing (or collapsed): the player gives up the screen immediately, so the
-    // mini-player underneath answers taps and swipes even while the animation finishes.
-    val interactive = state.expanded || morph.dragging
-    // A drag on the video or details whose page goes away mid-gesture (turning to fullscreen)
-    // never gets its release: settle it here, or the morph stays "dragging" for good.
-    DisposableEffect(morph) { onDispose { morph.settle(0f, reducedMotion = false) } }
-    val showDetails by remember { derivedStateOf { state.expanded || morph.dragging || morph.progress.value > DetailsFadeStart } }
+    val progress = { dock.openFraction() }
+    // Only changes when the threshold is crossed. Reading the fraction itself
+    // here recomposed the whole player on every pixel of a drag, which flashed it.
+    val interactive by remember { derivedStateOf { dock.openFraction() > 0.5f } }
     val details = state.details
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -164,78 +178,50 @@ fun PlayerScreen(
     // edge is a quarter of the way up the screen (black before the growing frame reaches the
     // top), and out with the fold.
     val blackStatus = {
-        val g = morph.geometry
-        // The video's top edge travels from the mini-player's thumbnail to the stage's top.
-        val start = if (g == null) StatusBlackFromUp else ((g.miniThumb.top - g.screen.height * (1f - StatusBlackFromUp)) / (g.miniThumb.top - g.stage.top))
-        ramp(morph.progress.value, start.coerceIn(0f, StatusBlackEnd - 0.1f), StatusBlackEnd) * (1f - fold.value)
+        val p = progress()
+        ramp(p, StatusBlackFromUp, StatusBlackEnd) * (1f - fold.value)
     }
     LaunchedEffect(Unit) { snapshotFlow { blackStatus() > 0.5f }.collect { StatusBarOverVideo.on = it } }
     DisposableEffect(Unit) { onDispose { StatusBarOverVideo.on = false } }
 
     val pageColor = c.surface
-    val miniColor = c.surfaceContainerHighest
-    Box(
-        Modifier
-            .fillMaxSize()
-            // The morph's moving frame: the mini-player card growing to the full screen.
-            .graphicsLayer {
-                val g = morph.geometry ?: return@graphicsLayer
-                val p = morph.progress.value
-                // The page itself becomes the mini-player card. Its bottom edge holds at the
-                // card's bottom until well into the open (and from there on the way down), so
-                // it never sweeps over the tab bar.
-                val full = Rect(Offset.Zero, size)
-                val frame = Rect(
-                    lerpF(g.miniCard.left, full.left, p), lerpF(g.miniCard.top, full.top, p),
-                    lerpF(g.miniCard.right, full.right, p), lerpF(g.miniCard.bottom, full.bottom, ramp(p, 0.3f)),
-                )
-                shape = RoundRectClip(frame, lerpF(g.miniRadius, 0f, p.coerceIn(0f, 1f)))
-                clip = true
-            }
-            .drawBehind {
-                val p = morph.progress.value
-                // Opaque throughout: at the small end it IS the mini-player card (same color).
-                drawRect(lerpColor(miniColor, pageColor, ramp(p, 0f, 0.6f)))
-            }
-            // Open: a hit target over the whole screen, so taps never reach the tabs beneath.
-            // Collapsing: no hit target at all, so touches fall through to the mini-player.
-            .then(if (interactive) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } } else Modifier),
-    ) {
-        // Soft tint behind the video, fading into the page.
+    DisposableEffect(dock) { onDispose { dock.attached = false } }
+    Box(Modifier.fillMaxSize()) {
+        // The page fades in behind the video. The video itself stays solid and
+        // flies to the mini-player's thumbnail (BitChord's dock fade).
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = dockFade(progress()) }
+                .background(pageColor),
+        )
         Box(
             Modifier.fillMaxWidth().height(520.dp)
-                .graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) }
+                .graphicsLayer { alpha = dockFade(progress()) }
                 .background(Brush.verticalGradient(listOf(c.primaryContainer.copy(alpha = 0.75f), c.surface))),
         )
-        ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottomClearance + 8.dp))
+        ActionMessage(
+            state,
+            Modifier.align(Alignment.BottomCenter).zIndex(1f)
+                .graphicsLayer { alpha = dockFade(progress()) }
+                .padding(bottom = bottomClearance + 8.dp),
+        )
         Column(Modifier.fillMaxSize()) {
             Spacer(Modifier.height(top + StageTopGap))
-            // Pinned: the video stays put while the details scroll beneath it. Sit above the
-            // details list so the bottom scrubber/thumb aren't covered at the seam.
-            Box(Modifier.zIndex(2f)) {
-                VideoStage(state, morph, fold, onCollapse, onFullscreen, interactive)
+            Box(Modifier.zIndex(2f).onGloballyPositioned {
+                if (dock.offset() != null) dock.attached = true
+            }) {
+                VideoStage(
+                    state, sheetMotion, dock, progress, fold, onCollapse, onFullscreen, interactive,
+                )
             }
 
-            // While collapsing the details are invisible anyway; leaving them out keeps them
-            // from catching touches meant for the mini-player.
-            if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .zIndex(0f)
-                    .nestedScroll(morph.nestedScroll)
-                    .graphicsLayer {
-                        // The details ride along under the video's bottom edge (so they never
-                        // overlap it mid-morph) and only fade in for the last stretch.
-                        val p = morph.progress.value
-                        alpha = ramp(p, DetailsFadeStart)
-                        val g = morph.geometry
-                        translationY = if (g != null && p < 0.98f) {
-                            lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
-                        } else {
-                            0f
-                        }
-                    },
+                    .nestedScroll(sheetDismissScroll(sheetMotion))
+                    .graphicsLayer { alpha = dockFade(progress()) },
                 contentPadding = PaddingValues(bottom = bottomClearance + 16.dp),
             ) {
                 item(key = "info") {
@@ -330,15 +316,12 @@ fun PlayerScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(bottom + 130.dp)
-                .graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) }
+                .graphicsLayer { alpha = dockFade(progress()) }
                 .drawBehind { drawRect(vignette) },
         )
         // Swiping home from the bottom edge never scrolls the details (open player only: while
         // collapsing, touches must still fall through to the mini-player).
         if (interactive) BottomGestureGuard(Modifier.align(Alignment.BottomCenter))
-        // The mini-player's title and buttons travel with the shrinking video and fade in as
-        // it lands, so the page turns into the mini-player rather than flying to one.
-        MorphingMiniDetails(state, morph)
 
         // Comments open as a panel whose top sits just under the video.
         if (state.sheet == PlayerSheet.Comments) {
@@ -369,8 +352,35 @@ fun PlayerScreen(
  * YouTube app (Derek, 2026-10-10): the video swells under the finger, and past
  * [FullscreenPull] or with a flick it turns to landscape; short of that it eases back.
  */
+/** Hands downward list scroll to the player sheet once the list is at the top. */
+private fun sheetDismissScroll(motion: PlayerSheetMotion): NestedScrollConnection =
+    object : NestedScrollConnection {
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            if (source == NestedScrollSource.UserInput && available.y > 0f) {
+                motion.drag(available.y)
+                return available
+            }
+            return Offset.Zero
+        }
+
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            if (!motion.holding) return Velocity.Zero
+            motion.release(available.y)
+            return available
+        }
+    }
+
 @Composable
-private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<Float, *>, onCollapse: () -> Unit, onFullscreen: () -> Unit, interactive: Boolean) {
+private fun VideoStage(
+    state: PlayerState,
+    sheetMotion: PlayerSheetMotion,
+    dock: PlayerDock,
+    progress: () -> Float,
+    fold: Animatable<Float, *>,
+    onCollapse: () -> Unit,
+    onFullscreen: () -> Unit,
+    interactive: Boolean,
+) {
     val reduced = rememberReducedMotion()
     val scope = rememberCoroutineScope()
     // The height follows the video; when its real shape arrives the change eases in.
@@ -381,11 +391,66 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
     )
     val pullUp = remember { Animatable(0f) }
     val pullDistance = with(LocalDensity.current) { FullscreenPull.toPx() }
-    // Each gesture's first move decides: up on the open player pulls toward fullscreen,
-    // anything else drives the morph.
-    var decided by remember { mutableStateOf(false) }
-    var pulling by remember { mutableStateOf(false) }
-    val folded = { fold.value * ramp(morph.progress.value, 0.8f) }
+    val pulling = remember { mutableStateOf(false) }
+    val onFullscreenNow = rememberUpdatedState(onFullscreen)
+    val reducedNow = rememberUpdatedState(reduced)
+    // Same drag the title uses: a scroll that never moves its own content, so
+    // every pixel of the finger is handed to the sheet. It sits outside the
+    // video's scale, which was turning that pixel count into a different one.
+    val dragScroll = rememberScrollableState { 0f }
+    val sheetDrag = remember(sheetMotion, dock, pullUp, scope, pullDistance) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
+                if (sheetMotion.holding) {
+                    pulling.value = false
+                    sheetMotion.drag(available.y)
+                    return Offset(0f, available.y)
+                }
+                val upward = available.y < 0f
+                val canFullscreen = upward && !state.fullscreen && !AudioOnly.enabled && dock.openFraction() >= 0.999f
+                if (canFullscreen || pulling.value && upward) {
+                    pulling.value = true
+                    val next = (pullUp.value - available.y).coerceAtLeast(0f)
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) { pullUp.snapTo(next) }
+                    return Offset(0f, available.y)
+                }
+                if (pulling.value && available.y > 0f) {
+                    pulling.value = false
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) { pullUp.snapTo(0f) }
+                    sheetMotion.drag(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y > 0f && !sheetMotion.holding && !pulling.value) {
+                    sheetMotion.drag(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (sheetMotion.holding) {
+                    sheetMotion.release(available.y)
+                    return available
+                }
+                if (!pulling.value) return Velocity.Zero
+                val traveled = pullUp.value
+                pulling.value = false
+                if (traveled > pullDistance || available.y < -1400f) onFullscreenNow.value()
+                if (reducedNow.value) pullUp.snapTo(0f) else pullUp.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
+                return available
+            }
+        }
+    }
+    val folded = { fold.value * ramp(progress(), 0.8f) }
+    val density = LocalDensity.current
+    // Where the stage sits with the sheet fully open. Kept off snapshot state:
+    // writing it every placement recomposed the player mid-drag.
+    val stageAnchor = remember { StageAnchor() }
     val stage = Modifier
         .graphicsLayer { clip = folded() > 0.001f }
         .layout { measurable, constraints ->
@@ -401,6 +466,11 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
         .padding(horizontal = StageSideGap)
         .fillMaxWidth()
         .aspectRatio(aspect)
+        .onGloballyPositioned { coords ->
+            val off = dock.offset() ?: 0f
+            stageAnchor.origin = coords.positionOnScreen() - Offset(0f, off)
+            if (!dock.attached) dock.attached = true
+        }
         .graphicsLayer {
             // Rubber band: up to 6% bigger, ever more slowly, growing down from the top edge.
             val k = 1f + 0.06f * (1f - exp(-pullUp.value / (pullDistance * 1.5f)))
@@ -408,56 +478,51 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
             scaleY = k
             transformOrigin = TransformOrigin(0.5f, 0f)
         }
-        // Container transform: at progress 0 the video's centred 16:9 part sits exactly
-        // on the mini-player's thumbnail (scale, position and corner radius); at 1 the
-        // whole stage is home.
         .graphicsLayer {
-            val g = morph.geometry
-            val p = morph.progress.value
-            if (g != null) {
+            val p = progress()
+            val origin = stageAnchor.origin
+            val mini = dock.miniArtOnScreen()
+            val off = dock.offset() ?: 0f
+            if (origin != null && mini != null && p < 0.999f) {
+                // Predict this frame's place from the anchor and the offset the
+                // finger is on now. The layout position is a frame behind a fast
+                // drag, which left the picture short of the thumbnail and then
+                // snapped it home.
+                val stageScreen = origin + Offset(0f, off)
+                val miniLocal = Rect(
+                    mini.left - stageScreen.x,
+                    mini.top - stageScreen.y,
+                    mini.right - stageScreen.x,
+                    mini.bottom - stageScreen.y,
+                )
+                val g = MorphGeometry(
+                    screen = size,
+                    miniCard = miniLocal,
+                    miniThumb = miniLocal,
+                    stage = Rect(Offset.Zero, size),
+                    miniRadius = with(density) { dock.miniArtCorner().toPx() },
+                    thumbRadius = with(density) { dock.miniArtCorner().toPx() },
+                    stageRadius = with(density) { StageRadius.toPx() },
+                )
                 val f = g.videoFrame(size, p)
                 scaleX = f.scale
                 scaleY = f.scale
                 transformOrigin = TransformOrigin(0f, 0f)
                 translationX = f.offset.x
                 translationY = f.offset.y
-                // Radius in layer space: divided by the scale so the small version
-                // shows the thumbnail's 17 dp corners, not a shrunken 28 dp.
-                shape = RoundRectClip(f.window, lerpF(g.thumbRadius / f.startScale, g.stageRadius, p.coerceIn(0f, 1f)))
+                val screenRadius = lerpF(g.thumbRadius, g.stageRadius, p.coerceIn(0f, 1f))
+                shape = RoundRectClip(f.window, screenRadius / f.scale.coerceAtLeast(0.01f))
+                clip = true
             } else {
                 shape = RoundedCornerShape(StageRadius)
+                clip = false
             }
-            // Morph shape clips the stage; keep clip off so the seam scrub/thumb aren't cropped on collapse.
-            clip = false
-            // Only while it floats mid-morph; landed, it is a flat edge-to-edge rectangle.
             shadowElevation = 14.dp.toPx() * (1f - p).coerceIn(0f, 1f)
             ambientShadowColor = Color.Black.copy(alpha = 0.25f)
             spotShadowColor = Color.Black.copy(alpha = 0.35f)
         }
-        .draggable(
-            state = rememberDraggableState { delta ->
-                if (!decided) {
-                    decided = true
-                    pulling = delta < 0f && state.expanded && !state.fullscreen && !AudioOnly.enabled && morph.progress.value >= 0.999f
-                }
-                if (pulling) scope.launch(start = CoroutineStart.UNDISPATCHED) { pullUp.snapTo((pullUp.value - delta).coerceAtLeast(0f)) }
-                else morph.dragBy(delta)
-            },
-            orientation = Orientation.Vertical,
-            onDragStopped = { velocity ->
-                val wasPulling = pulling
-                decided = false
-                pulling = false
-                if (wasPulling) {
-                    if (pullUp.value > pullDistance || velocity < -PlayerMorph.FLING_PX_PER_S) onFullscreen()
-                    if (reduced) pullUp.snapTo(0f) else pullUp.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
-                } else {
-                    morph.settle(velocity, reduced)
-                }
-            },
-        )
-    // Controls appear only once the video has nearly landed, so they never ride the morph.
-    val controlsAlpha = { ramp(morph.progress.value, 0.7f) }
+    // Controls appear only once the video has nearly landed.
+    val controlsAlpha = { ramp(progress(), 0.7f) }
     // Audio only ↔ video in place (Derek, 2026-10-14): [cover] is how much of the audio stage
     // lies over the video, [gather] its controls coming together.
     val audio = AudioOnly.enabled
@@ -479,14 +544,18 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
     }
     val showVideo by remember { derivedStateOf { !AudioOnly.enabled || cover.value < 1f } }
     val showAudio by remember { derivedStateOf { AudioOnly.enabled || cover.value > 0f } }
-    Box(stage) {
+    Box(
+        Modifier
+            .nestedScroll(sheetDrag)
+            .scrollable(dragScroll, Orientation.Vertical, overscrollEffect = NoOverscroll)
+            .then(stage),
+    ) {
         if (showVideo) {
             VideoContent(
                 state = state,
                 fullscreen = false,
                 interactive = interactive,
-                // A tap on the shrinking video brings the player straight back.
-                onInactiveTap = { state.expanded = true },
+                onInactiveTap = { },
                 onCollapse = onCollapse,
                 onToggleFullscreen = onFullscreen,
                 controlsAlpha = controlsAlpha,
@@ -498,8 +567,8 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
             AudioOnlyStage(
                 state = state,
                 interactive = interactive && audio,
-                onInactiveTap = { state.expanded = true },
-                progress = { morph.progress.value },
+                onInactiveTap = { },
+                progress = progress,
                 controlsAlpha = controlsAlpha,
                 cover = { cover.value },
                 gather = { gather.value },
@@ -509,11 +578,29 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, fold: Animatable<
     }
 }
 
+/** Fully-open screen position of the portrait stage. Not snapshot state — see [VideoStage]. */
+private class StageAnchor {
+    var origin: Offset? = null
+}
+
 /** Audio only ↔ video: how long the audio stage takes to cover (or uncover) the picture. */
 private const val AudioSwitchMs = 360
 
 /** How far a swipe up on the open video travels before it goes fullscreen on release. */
 private val FullscreenPull = 64.dp
+
+/** The video's drag scroll should move the sheet, not stretch the picture. */
+private object NoOverscroll : OverscrollEffect {
+    override fun applyToScroll(delta: Offset, source: NestedScrollSource, performScroll: (Offset) -> Offset): Offset =
+        performScroll(delta)
+
+    override suspend fun applyToFling(velocity: Velocity, performFling: suspend (Velocity) -> Velocity) {
+        performFling(velocity)
+    }
+
+    override val isInProgress: Boolean get() = false
+    override val effectModifier: Modifier get() = Modifier
+}
 
 // ── Account actions (signed in) ────────────────────────────────────────────────
 
@@ -696,6 +783,8 @@ fun MiniPlayer(
     shape: CornerBasedShape = RoundedCornerShape(MiniRadius),
     /** The glass nav's inline form: 48dp, matching its tab pill, with a smaller slot. */
     compact: Boolean = false,
+    dock: PlayerDock? = null,
+    pull: MiniPlayerPull? = null,
 ) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
@@ -723,6 +812,7 @@ fun MiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(if (compact) MiniHeightInline else MiniHeight)
+            .miniPlayerPullGestures(pull)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
             .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
             .clip(shape)
@@ -732,17 +822,19 @@ fun MiniPlayer(
             // The live video, not a still. While the player is open or morphing, this slot
             // stays EMPTY: the shrinking video is on its way here, and a thumbnail already
             // sitting in the slot read as a second copy it was flying towards.
-            Box(Modifier.size(width = thumbWidth, height = thumbHeight).clip(RoundedCornerShape(thumbRadius))) {
-                if (showVideo) {
-                    Box(Modifier.fillMaxSize().background(Color.Black))
-                    Thumbnail(item.thumbnail, Modifier.fillMaxSize(), radius = 0)
-                    // The player's stage, centre-cropped to the slot (as the morph's small end
-                    // shows it), with the video fitted inside: never stretched.
-                    // Audio only: there is no picture, the thumbnail stands in.
-                    if (!AudioOnly.enabled) {
-                        Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
-                            LocalVideoSurface.current(Modifier.fillMaxSize().aspectFit(state.videoAspect).hideStaleVideo(state))
-                        }
+            Box(
+                Modifier
+                    .size(width = thumbWidth, height = thumbHeight)
+                    .playerDockArt(dock, thumbRadius)
+                    .clip(RoundedCornerShape(thumbRadius)),
+            ) {
+                // The still stays until the flying video is actually over this
+                // slot. Clearing it as soon as the player opened left a hole
+                // for as long as the sheet took to draw.
+                Thumbnail(item.thumbnail, Modifier.fillMaxSize(), radius = 0)
+                if (showVideo && !AudioOnly.enabled) {
+                    Box(Modifier.fillMaxSize().aspectFit(state.stageAspect, cover = true)) {
+                        LocalVideoSurface.current(Modifier.fillMaxSize().aspectFit(state.videoAspect).hideStaleVideo(state))
                     }
                 }
             }
