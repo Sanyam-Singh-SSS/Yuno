@@ -85,7 +85,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -110,6 +112,14 @@ private const val StatusBlackEnd = 0.9f
 internal val StageSideGap = 0.dp
 internal val StageRadius = 0.dp
 internal val MiniHeight = 70.dp
+/** Expanded liquid-glass accessory — horizontal insets match on both sides. */
+private val MiniGlassInsetHorizontal = 12.dp
+private val MiniGlassInsetVertical = 7.dp
+private val MiniGlassThumbWidth = 84.dp
+private val MiniGlassThumbHeight = 46.dp
+private val MiniGlassThumbRadius = 15.dp
+private val MiniHeightGlass = MiniGlassThumbHeight + MiniGlassInsetVertical * 2
+private val MiniGlassPlaySize = 50.dp
 /** The same bar folded into the glass nav's inline row, level with its tab pill. */
 internal val MiniHeightInline = 48.dp
 internal val MiniRadius = 24.dp
@@ -117,6 +127,12 @@ internal val MiniThumbStart = 7.dp
 internal val MiniThumbWidth = 92.dp
 internal val MiniThumbHeight = 52.dp
 internal val MiniThumbRadius = 17.dp
+/** BitChord glass accessory title (GlassNavBar ACCESSORY_TITLE_*). */
+private val MiniGlassTitleSize = 13.sp
+private val MiniGlassTitleTracking = 0.15.sp
+/** BitChord glass accessory artist line (ACCESSORY_ARTIST_*). */
+private val MiniGlassChannelSize = 12.sp
+private val MiniGlassChannelTracking = 0.35.sp
 /**
  * Portrait stage shape: tall videos can use up to 4:5; wide ones letterbox inside a 16:9 frame
  * (2.35:1 and wider no longer squash the whole player flat).
@@ -823,14 +839,33 @@ fun MiniPlayer(
             .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
         else -> Modifier.background(container, shape)
     }
-    val thumbWidth = if (compact) 58.dp else MiniThumbWidth
-    val thumbHeight = if (compact) 34.dp else MiniThumbHeight
-    val thumbRadius = if (compact) 11.dp else MiniThumbRadius
+    val glassExpanded = glassOn && !compact
+    val thumbWidth = when {
+        compact -> 58.dp
+        glassExpanded -> MiniGlassThumbWidth
+        else -> MiniThumbWidth
+    }
+    val thumbHeight = when {
+        compact -> 34.dp
+        glassExpanded -> MiniGlassThumbHeight
+        else -> MiniThumbHeight
+    }
+    val thumbRadius = when {
+        compact -> 11.dp
+        glassExpanded -> MiniGlassThumbRadius
+        else -> MiniThumbRadius
+    }
     val thumbStart = if (compact) 7.dp else MiniThumbStart
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (compact) MiniHeightInline else MiniHeight)
+            .height(
+                when {
+                    compact -> MiniHeightInline
+                    glassExpanded -> MiniHeightGlass
+                    else -> MiniHeight
+                },
+            )
             .then(if (gestures) Modifier.miniPlayerPullGestures(pull, onDismiss = state::close) else Modifier)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
             // Liquid glass already clips, and an extra clip layer around it
@@ -848,7 +883,21 @@ fun MiniPlayer(
             )
             .then(surface)
     ) {
-        Row(Modifier.fillMaxSize().padding(start = thumbStart, end = if (compact) 6.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxSize().then(
+                if (glassExpanded) {
+                    Modifier.padding(
+                        start = MiniGlassInsetHorizontal,
+                        end = MiniGlassInsetHorizontal,
+                        top = MiniGlassInsetVertical,
+                        bottom = MiniGlassInsetVertical,
+                    )
+                } else {
+                    Modifier.padding(start = thumbStart, end = if (compact) 6.dp else 8.dp)
+                },
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // The live video, not a still. While the player is open or morphing, this slot
             // stays EMPTY: the shrinking video is on its way here, and a thumbnail already
             // sitting in the slot read as a second copy it was flying towards.
@@ -890,27 +939,23 @@ fun MiniPlayer(
 private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean, compact: Boolean = false) {
     val c = MaterialTheme.colorScheme
     val item = state.current ?: return
-    val playSize = if (compact) 38.dp else 46.dp
+    val glassAccessory = LocalLiquidGlassEnabled.current && isGlassSupported()
+    val playSize = when {
+        compact -> 38.dp
+        glassAccessory && !compact -> MiniGlassPlaySize
+        else -> 46.dp
+    }
+    val titleColor = if (glassAccessory) glassContentColor() else c.onBackground
+    val channelColor = if (glassAccessory) titleColor.copy(alpha = 0.7f) else c.onSurfaceVariant
+    val titleStyle = miniPlayerTitleStyle(glassAccessory || compact)
+    val channelStyle = miniPlayerChannelStyle(glassAccessory || compact)
     Row(
         modifier = Modifier.weight(1f).fillMaxHeight(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                item.title,
-                fontSize = if (compact) 13.sp else 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                item.channel,
-                fontSize = if (compact) 11.sp else 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = c.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            FadingLine(item.title, titleStyle, titleColor)
+            FadingLine(item.channel, channelStyle, channelColor)
         }
         Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         MorphPlayButton(
@@ -919,11 +964,44 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean, compa
             size = playSize,
             // No disc behind it — the glyph alone, in the accent colour.
             container = Color.Transparent,
-            content = c.primary,
+            content = if (glassAccessory) titleColor else c.primary,
             filled = true,
             enabled = interactive,
             onClick = state::togglePlay,
         )
+    }
+}
+
+@Composable
+private fun miniPlayerTitleStyle(accessoryType: Boolean): TextStyle {
+    val base = MaterialTheme.typography.titleMedium
+    val trim = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.Both)
+    return if (accessoryType) {
+        base.copy(
+            fontSize = MiniGlassTitleSize,
+            fontWeight = FontWeight.W700,
+            letterSpacing = MiniGlassTitleTracking,
+            lineHeight = MiniGlassTitleSize,
+            lineHeightStyle = trim,
+        )
+    } else {
+        base.copy(lineHeight = base.fontSize, lineHeightStyle = trim)
+    }
+}
+
+@Composable
+private fun miniPlayerChannelStyle(accessoryType: Boolean): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium
+    val trim = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.Both)
+    return if (accessoryType) {
+        base.copy(
+            fontSize = MiniGlassChannelSize,
+            letterSpacing = MiniGlassChannelTracking,
+            lineHeight = MiniGlassChannelSize,
+            lineHeightStyle = trim,
+        )
+    } else {
+        base.copy(lineHeight = base.fontSize, lineHeightStyle = trim)
     }
 }
 
