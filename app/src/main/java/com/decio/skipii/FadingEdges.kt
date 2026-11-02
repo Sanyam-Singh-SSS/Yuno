@@ -45,4 +45,38 @@ fun Modifier.fadingEdges(width: Dp, start: () -> Float = NoFade, end: () -> Floa
             }
         }
 
+/**
+ * Fades out toward the end edge on one horizontal band (e.g. the last line of a title).
+ */
+fun Modifier.fadingEndOnLine(
+    width: Dp,
+    lineTop: () -> Float,
+    lineBottom: () -> Float,
+    strength: () -> Float = NoFade,
+): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val fade = width.toPx().coerceAtMost(size.width / 2f)
+        val stops = Array(FADE_CURVE_STOPS + 1) { i ->
+            val t = i / FADE_CURVE_STOPS.toFloat()
+            t to Color.Black.copy(alpha = 1f - smootherStep(t))
+        }
+        val rightBrush = Brush.horizontalGradient(*stops, startX = size.width, endX = size.width - fade)
+        onDrawWithContent {
+            drawContent()
+            val top = lineTop().coerceIn(0f, size.height)
+            val bottom = lineBottom().coerceIn(top, size.height)
+            val band = bottom - top
+            if (band <= 0f) return@onDrawWithContent
+            val alpha = strength().coerceIn(0f, 1f)
+            if (alpha <= 0f) return@onDrawWithContent
+            drawRect(
+                rightBrush,
+                Offset(size.width - fade, top),
+                Size(fade, band),
+                alpha = alpha,
+                blendMode = BlendMode.DstOut,
+            )
+        }
+    }
+
 private val NoFade = { 0f }

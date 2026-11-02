@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -295,13 +296,13 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    video.title,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp,
-                    lineHeight = 20.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                FadingTitle(
+                    text = video.title,
+                    style = TextStyle(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                    ),
                 )
                 Spacer(Modifier.height(1.dp))
                 Text(
@@ -335,7 +336,10 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(video.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            FadingTitle(
+                text = video.title,
+                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp),
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 listOfNotNull(video.channel.ifBlank { null }, video.views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" }).joinDots(),
