@@ -178,9 +178,11 @@ fun PageTopBar(
 ) {
     val glass = LocalLiquidGlassEnabled.current && isGlassSupported()
     val host = LocalTopChrome.current
-    // Drawn later by [TopChromeLayer], outside the page recording, so the
-    // glass samples the page that's actually on screen — including mid-transition.
-    if (glass && host != null && !LocalTopChromeDrawing.current) {
+    // Drawn later by [TopChromeLayer], outside the page. Liquid glass has to
+    // sample the recording from outside it, and the haze blur has to sit
+    // outside the haze source the way the nav does. Inside that source the
+    // buttons are part of the snapshot, so there is nothing behind them to blur.
+    if (host != null && !LocalTopChromeDrawing.current) {
         if (shown) {
             val entry = remember { TopChromeEntry() }
             DisposableEffect(host, entry) {
@@ -318,7 +320,10 @@ fun Modifier.floatingChrome(shape: CornerBasedShape): Modifier {
     val container = MaterialTheme.colorScheme.surface
     val glassOn = LocalLiquidGlassEnabled.current && isGlassSupported()
     val haze = LocalAppHaze.current
-    if (glassOn) return background(container, shape).then(liquidGlass(shape))
+    // No solid fill under the glass. surface is nearly black in the dark theme,
+    // and the glass layer sits inside that circle — wherever it fell short, the
+    // fill showed as a black circle behind the button.
+    if (glassOn) return liquidGlass(shape)
     val filled = clip(shape).background(container, shape)
     return if (haze != null) {
         filled.hazeEffect(

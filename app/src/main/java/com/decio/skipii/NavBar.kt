@@ -70,8 +70,8 @@ import kotlin.math.roundToInt
 internal val NavHeight = 62.dp
 /** How wide the floating bars are ever allowed to get. BitChord's FLOATING_BAR_MAX_WIDTH. */
 internal val FloatingBarMaxWidth = 440.dp
-/** Side margin of the resting tab bar. BitChord's NAV_BAR_GUTTER, wider than [PageGutter]. */
-internal val NavBarGutter = 19.dp
+/** Side margin of the nav and the mini player. The same inset as the lists ([PageGutter]). */
+internal val NavBarGutter = PageGutter
 /** How far above the navigation inset the bar sits. BitChord's NAV_BAR_LIFT. */
 internal val NavBarLift = 6.dp
 /** The bar never sits closer than a gesture inset. BitChord's GESTURE_BAR_FLOOR. */

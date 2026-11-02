@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -332,9 +333,10 @@ private class DrawBackdropNode(
                 block = recordBackdropBlock
             )
 
-            layer.topLeft =
-                if (padding != 0f) IntOffset(-padding.toInt(), -padding.toInt())
-                else IntOffset.Zero
+            // Positioning is done in [drawRecordedBackdrop]. A topLeft in buffer
+            // pixels, then a scale about the origin, slid the glass off the
+            // control and left the fill showing on one side.
+            layer.topLeft = IntOffset.Zero
             drawRecordedBackdrop()
         }
     }
@@ -348,11 +350,22 @@ private class DrawBackdropNode(
         if (layer != null) {
             val scale = backdropScale
             if (scale != 1f) {
-                // Vendored addition: stretch the low resolution layer back over the
-                // full surface; the blur in the effect chain masks the upscaling.
-                scale(1f / scale, pivot = Offset.Zero) {
-                    drawLayer(layer)
+                // The recording is `padding` buffer-pixels in from the layer's
+                // origin, and only floor(size * scale) of those pixels hold the
+                // view. Map that rectangle onto this view so the glass meets
+                // every edge, including the left.
+                val pad = padding
+                val recordedW = (size.width * scale).toInt().coerceAtLeast(1)
+                val recordedH = (size.height * scale).toInt().coerceAtLeast(1)
+                val fitX = size.width / recordedW
+                val fitY = size.height / recordedH
+                translate(-pad * fitX, -pad * fitY) {
+                    scale(scaleX = fitX, scaleY = fitY, pivot = Offset.Zero) {
+                        drawLayer(layer)
+                    }
                 }
+            } else if (padding != 0f) {
+                translate(-padding, -padding) { drawLayer(layer) }
             } else {
                 drawLayer(layer)
             }

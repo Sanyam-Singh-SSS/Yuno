@@ -30,8 +30,23 @@ fun BackdropEffectScope.lens(
     if (!isRuntimeShaderSupported()) return
     if (refractionHeight <= 0f || refractionAmount <= 0f) return
 
+    // The rim is tuned for the nav, which is taller than this bowl. On a 44dp
+    // circle or pill the bowl is deeper than the shape, so the whole control
+    // refracts and reads as a squashed disc. Fit the rim inside the shape and
+    // leave a flat middle.
+    val radius = size.minDimension * 0.5f
+    val height: Float
+    val amount: Float
+    if (radius.isFinite() && radius > 0f && refractionHeight > radius * 0.85f) {
+        height = radius * 0.65f
+        amount = refractionAmount * (height / refractionHeight)
+    } else {
+        height = refractionHeight
+        amount = refractionAmount
+    }
+
     if (padding > 0f) {
-        padding = (padding - refractionHeight).fastCoerceAtLeast(0f)
+        padding = (padding - height).fastCoerceAtLeast(0f)
     }
 
     val cornerRadii = cornerRadii
@@ -53,8 +68,8 @@ fun BackdropEffectScope.lens(
                 setFloatUniform("size", size.width, size.height)
                 setFloatUniform("offset", -padding, -padding)
                 setFloatUniform("cornerRadii", cornerRadii)
-                setFloatUniform("refractionHeight", refractionHeight)
-                setFloatUniform("refractionAmount", -refractionAmount)
+                setFloatUniform("refractionHeight", height)
+                setFloatUniform("refractionAmount", -amount)
                 setFloatUniform("depthEffect", if (depthEffect) 1f else 0f)
                 if (chromaticAberration) {
                     setFloatUniform("chromaticAberration", 1f)

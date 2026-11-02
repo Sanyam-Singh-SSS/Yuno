@@ -29,12 +29,7 @@ private val TabVerticalPadding = 6.5.dp
 private val TabIconSize = 28.dp
 private val TabIconLabelGap = 1.dp
 
-/**
- * The collapsed row's margin at either side of the screen, and its items'
- * spacing — BitChord's INLINE_GUTTER / INLINE_SPACING. The outer gutter is
- * already applied by MainActivity, so only the difference goes on the bar.
- */
-private val InlineGutter = 28.dp
+/** Spacing between the collapsed row's items. BitChord's INLINE_SPACING. */
 private val InlineSpacing = 14.dp
 
 /**
@@ -122,11 +117,9 @@ fun GlassNavBar(
             tabBarContentPadding = PaddingValues(PillInset),
             tabExpandedContentPadding = PaddingValues(vertical = TabVerticalPadding),
             inlineComponentSpacing = InlineSpacing,
-            inlineBarPadding = PaddingValues(
-                start = InlineGutter - NavBarGutter,
-                end = InlineGutter - NavBarGutter,
-                bottom = InlineLift,
-            ),
+            // No extra side inset. The bar already sits at the page gutter, and
+            // pulling the collapsed row in made it narrower than the lists.
+            inlineBarPadding = PaddingValues(bottom = InlineLift),
         ),
         contentKey = remember(selected, tabs, contentColor) { listOf(selected, tabs, contentColor) },
     ) {

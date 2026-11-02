@@ -63,7 +63,6 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -811,10 +810,13 @@ fun MiniPlayer(
     val glassOn = LocalLiquidGlassEnabled.current && isGlassSupported()
     val haze = LocalAppHaze.current
     val container = c.surfaceContainerHighest
+    // Same stack as the nav (NavBar.kt): an opaque fill, then the haze blur
+    // drawn over it. A translucent fill plus clip() ahead of the effect left
+    // this a flat card — the blur never made it to the screen.
     val surface = when {
         glassOn -> Modifier.liquidGlass(shape = shape)
         haze != null -> Modifier
-            .background(container.copy(alpha = 0.72f), shape)
+            .background(container, shape)
             .hazeEffect(state = haze, style = HazeMaterials.regular(container.copy(alpha = 0.72f))) {
                 inputScale = HazeInputScale.Fixed(0.33f)
             }
@@ -831,8 +833,13 @@ fun MiniPlayer(
             .height(if (compact) MiniHeightInline else MiniHeight)
             .then(if (gestures) Modifier.miniPlayerPullGestures(pull, onDismiss = state::close) else Modifier)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
-            .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
-            .clip(shape)
+            .graphicsLayer {
+                this.shape = shape
+                clip = true
+                shadowElevation = if (glassOn) 0f else 16.dp.toPx()
+                ambientShadowColor = Color.Black.copy(alpha = 0.12f)
+                spotShadowColor = Color.Black.copy(alpha = 0.18f)
+            }
             .then(surface)
     ) {
         Row(Modifier.fillMaxSize().padding(start = thumbStart, end = if (compact) 6.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {
