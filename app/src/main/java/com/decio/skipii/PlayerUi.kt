@@ -203,7 +203,7 @@ fun PlayerScreen(
     }
     val statusBarPx = with(LocalDensity.current) { top.roundToPx() }
     LaunchedEffect(Unit) {
-        VideoTopSampler.start(this)
+        VideoTopSampler.start()
         snapshotFlow { statusScrimAlpha() > 0.5f }.collect { StatusBarOverVideo.on = it }
     }
     SideEffect { VideoTopSampler.statusBarPx = statusBarPx }

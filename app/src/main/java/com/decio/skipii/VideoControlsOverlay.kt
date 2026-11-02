@@ -18,6 +18,6 @@ object VideoControlsOverlay {
     /** Flat dim on the status-bar blur — same strength as the top of [scrim], not the gradient. */
     val statusBarDimColor = Color.Black.copy(alpha = 0.5f)
 
-    /** 0 hidden, 1 fully shown — animated in [VideoContent], read in [VideoTopStatusBlur]. */
+    /** 0 hidden, 1 fully shown — set from [VideoContent] during composition; read in [VideoTopStatusBlur]. */
     var dimAlpha by mutableFloatStateOf(0f)
 }

@@ -118,7 +118,10 @@ fun VideoSurface(player: Player?, modifier: Modifier = Modifier) {
                     override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
                     // Never let the view release it: the next view (or this one, re-attached) reuses it.
                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = st !== SharedVideoTexture.texture
-                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) = AvSync.onFrameDrawn()
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {
+                        AvSync.onFrameDrawn()
+                        VideoTopSampler.onVideoFrame()
+                    }
                 }
                 addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {

@@ -55,7 +55,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -385,7 +384,7 @@ fun VideoContent(
             }
         }
         val chromeAlpha = if (scrubbing) 0f else visibleAlpha * controlsAlpha()
-        SideEffect { VideoControlsOverlay.dimAlpha = chromeAlpha }
+        VideoControlsOverlay.dimAlpha = chromeAlpha
         DisposableEffect(Unit) { onDispose { VideoControlsOverlay.dimAlpha = 0f } }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
             Box(

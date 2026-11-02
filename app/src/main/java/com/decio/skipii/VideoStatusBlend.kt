@@ -25,11 +25,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /** TEMP: set true to show the raw cropped strip with no blur. */
 internal const val VIDEO_TOP_DEBUG_RAW_STRIP = false
@@ -48,22 +43,21 @@ object VideoTopSampler {
         private set
     /** Status-bar height in px — strip crop matches this, not a fraction of the whole frame. */
     var statusBarPx by mutableIntStateOf(0)
-    private var job: Job? = null
+    private var running = false
     private var scratch: Bitmap? = null
 
-    fun start(scope: CoroutineScope) {
-        job?.cancel()
-        job = scope.launch {
-            while (isActive) {
-                tick()
-                delay(33)
-            }
-        }
+    fun start() {
+        running = true
     }
 
     fun stop() {
-        job?.cancel()
-        job = null
+        running = false
+    }
+
+    /** Called on every main-player frame ([TextureView.onSurfaceTextureUpdated]). */
+    fun onVideoFrame() {
+        if (!running || statusBarPx <= 0) return
+        tick()
     }
 
     private fun tick() {
@@ -135,7 +129,8 @@ internal fun VideoTopStatusBlur(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(VideoControlsOverlay.statusBarDimColor.copy(alpha = 0.5f * controlsDim)),
+                        .graphicsLayer { this.alpha = controlsDim }
+                        .background(VideoControlsOverlay.statusBarDimColor),
                 )
             }
         }
