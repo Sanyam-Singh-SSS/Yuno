@@ -244,6 +244,8 @@ fun PlayerScreen(
             }) {
                 VideoStage(
                     state, sheetMotion, dock, progress, fold, onCollapse, onFullscreen, interactive,
+                    statusBarHeight = top,
+                    statusScrimAlpha = statusScrimAlpha,
                 )
             }
 
@@ -364,11 +366,6 @@ fun PlayerScreen(
             )
         }
     }
-    // Outside the morph: blurred video top in the status bar only.
-    VideoTopStatusBlur(
-        height = top,
-        alpha = { statusScrimAlpha() },
-    )
 }
 
 /**
@@ -405,6 +402,8 @@ private fun VideoStage(
     onCollapse: () -> Unit,
     onFullscreen: () -> Unit,
     interactive: Boolean,
+    statusBarHeight: androidx.compose.ui.unit.Dp,
+    statusScrimAlpha: () -> Float,
 ) {
     val reduced = rememberReducedMotion()
     val scope = rememberCoroutineScope()
@@ -542,17 +541,38 @@ private fun VideoStage(
                 transformOrigin = TransformOrigin(0f, 0f)
                 translationX = f.offset.x
                 translationY = f.offset.y
-                val screenRadius = lerpF(g.thumbRadius, g.stageRadius, p.coerceIn(0f, 1f))
-                shape = RoundRectClip(f.window, screenRadius / f.scale.coerceAtLeast(0.01f))
-                clip = true
-            } else {
-                shape = RoundedCornerShape(StageRadius)
-                clip = false
             }
             shadowElevation = 14.dp.toPx() * (1f - p).coerceIn(0f, 1f)
             ambientShadowColor = Color.Black.copy(alpha = 0.25f)
             spotShadowColor = Color.Black.copy(alpha = 0.35f)
         }
+    val stageVideoClip = Modifier.graphicsLayer {
+        val p = progress()
+        val origin = stageAnchor.origin
+        val mini = dock.miniArtOnScreen()
+        val off = dock.offset() ?: 0f
+        if (origin == null || mini == null || p >= 0.999f) return@graphicsLayer
+        val stageScreen = origin + Offset(0f, off)
+        val miniLocal = Rect(
+            mini.left - stageScreen.x,
+            mini.top - stageScreen.y,
+            mini.right - stageScreen.x,
+            mini.bottom - stageScreen.y,
+        )
+        val g = MorphGeometry(
+            screen = size,
+            miniCard = miniLocal,
+            miniThumb = miniLocal,
+            stage = Rect(Offset.Zero, size),
+            miniRadius = with(density) { dock.miniArtCorner().toPx() },
+            thumbRadius = with(density) { dock.miniArtCorner().toPx() },
+            stageRadius = with(density) { StageRadius.toPx() },
+        )
+        val f = g.videoFrame(size, p)
+        val screenRadius = lerpF(g.thumbRadius, g.stageRadius, p.coerceIn(0f, 1f))
+        shape = RoundRectClip(f.window, screenRadius / f.scale.coerceAtLeast(0.01f))
+        clip = true
+    }
     // Controls appear only once the video has nearly landed.
     val controlsAlpha = { ramp(progress(), 0.7f) }
     // Audio only ↔ video in place (Derek, 2026-10-14): [cover] is how much of the audio stage
@@ -582,35 +602,47 @@ private fun VideoStage(
             .scrollable(dragScroll, Orientation.Vertical, overscrollEffect = NoOverscroll)
             .then(stage),
     ) {
-        if (showVideo) {
-            val flying by remember { derivedStateOf { dock.poseReady && dock.openFraction() > 0f } }
-            VideoContent(
-                state = state,
-                fullscreen = false,
-                interactive = interactive,
-                onInactiveTap = { },
-                onCollapse = onCollapse,
-                onToggleFullscreen = onFullscreen,
-                controlsAlpha = controlsAlpha,
-                portraitEdgeScrub = true,
-                liveSurface = flying,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = if (flying) 1f else 0f },
-            )
+        Box(Modifier.fillMaxSize().then(stageVideoClip)) {
+            if (showVideo) {
+                val flying by remember { derivedStateOf { dock.poseReady && dock.openFraction() > 0f } }
+                VideoContent(
+                    state = state,
+                    fullscreen = false,
+                    interactive = interactive,
+                    onInactiveTap = { },
+                    onCollapse = onCollapse,
+                    onToggleFullscreen = onFullscreen,
+                    controlsAlpha = controlsAlpha,
+                    portraitEdgeScrub = true,
+                    liveSurface = flying,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = if (flying) 1f else 0f },
+                )
+            }
+            if (showAudio) {
+                AudioOnlyStage(
+                    state = state,
+                    interactive = interactive && audio,
+                    onInactiveTap = { },
+                    progress = progress,
+                    controlsAlpha = controlsAlpha,
+                    cover = { cover.value },
+                    gather = { gather.value },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
-        if (showAudio) {
-            AudioOnlyStage(
-                state = state,
-                interactive = interactive && audio,
-                onInactiveTap = { },
-                progress = progress,
-                controlsAlpha = controlsAlpha,
-                cover = { cover.value },
-                gather = { gather.value },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        // Rides the morph with the video; offset up into the status-bar band.
+        VideoTopStatusBlur(
+            height = statusBarHeight,
+            alpha = statusScrimAlpha,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .offset(y = -statusBarHeight)
+                .zIndex(1f),
+        )
     }
 }
 
