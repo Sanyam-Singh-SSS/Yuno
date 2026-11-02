@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
@@ -220,12 +221,11 @@ private fun SubscriptionsChannelStrip(
             ) {
                 ChannelAvatar(ch.avatar, ch.name, size = 56, selected = selected, ringSlot = true)
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    ch.name,
-                    fontSize = 12.sp,
+                FadingLine(
+                    text = ch.name,
+                    style = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Center),
                     color = c.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
