@@ -63,7 +63,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     var finishing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Column(Modifier.fillMaxSize().background(c.surface).statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).pressable(onClick = onCancel), contentAlignment = Alignment.Center) {
                 Icon(SfIcons.Close, "Cancel")
@@ -119,7 +119,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
             )
             if (finishing || error != null) {
                 Column(
-                    Modifier.fillMaxSize().background(c.surface).padding(32.dp),
+                    Modifier.fillMaxSize().background(c.background).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                 ) {

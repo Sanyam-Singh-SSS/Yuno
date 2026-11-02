@@ -358,7 +358,7 @@ fun YunoApp() {
     SideEffect { navScroll.onBeforeToggle = { SharedVideoTexture.captureFrame() } }
     // Shorts is a vertical swipe, not a list: that swipe must not fold the glass bar.
     LaunchedEffect(tab) { if (tab == Tab.Shorts) navScroll.expand() }
-    val windowBackground = c.surface
+    val windowBackground = c.background
     val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
         {
             drawRect(windowBackground)
@@ -374,7 +374,7 @@ fun YunoApp() {
         .hazeSource(hazeState)
         .then(if (glassOn) Modifier.layerBackdrop(appBackdrop) else Modifier)
         .then(if (glassOn && tab != Tab.Shorts) Modifier.nestedScroll(navScroll) else Modifier)
-    BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.background)) {
         val stageFloor = maxOf(StageMinAspect, constraints.maxWidth / (constraints.maxHeight * StageMaxHeightShare))
         SideEffect { player.stageFloor = stageFloor }
         val sharedSurface = remember(player) {
@@ -490,7 +490,7 @@ fun YunoApp() {
         TopChromeLayer(topChrome, Modifier.align(Alignment.TopCenter).fillMaxWidth())
 
         // Ledgii's bottom vignette
-        val pageColor = c.surface
+        val pageColor = c.background
         val vignette = remember(pageColor) { vignetteBrush(pageColor, opaqueAtTop = false) }
         Box(
             Modifier

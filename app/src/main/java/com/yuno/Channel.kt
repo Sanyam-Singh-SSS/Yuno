@@ -125,7 +125,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
     }
     LaunchedEffect(nearEnd, state.videos.size) { if (nearEnd && state.videos.isNotEmpty()) state.loadMore() }
     val top = pageContentTop()
-    Box(Modifier.fillMaxSize().background(c.surface)) {
+    Box(Modifier.fillMaxSize().background(c.background)) {
         Box(Modifier.fillMaxSize()) {
         val d = state.details
         when {

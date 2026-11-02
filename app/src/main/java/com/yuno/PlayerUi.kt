@@ -215,7 +215,7 @@ fun PlayerScreen(
         }
     }
 
-    val pageColor = c.surface
+    val pageColor = c.background
     DisposableEffect(dock) { onDispose { dock.attached = false } }
     Box(Modifier.fillMaxSize()) {
         // The page fades in behind the video. The video itself stays solid and
@@ -229,7 +229,7 @@ fun PlayerScreen(
         Box(
             Modifier.fillMaxWidth().height(520.dp)
                 .playerPageFade { dock.pageAlpha(sheetMotion.holding) }
-                .background(Brush.verticalGradient(listOf(c.primaryContainer.copy(alpha = 0.75f), c.surface))),
+                .background(Brush.verticalGradient(listOf(c.primaryContainer.copy(alpha = 0.75f), c.background))),
         )
         ActionMessage(
             state,

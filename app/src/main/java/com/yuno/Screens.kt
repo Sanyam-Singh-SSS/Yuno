@@ -382,7 +382,7 @@ fun PlaylistScreen(
     val avatarSeed = remember(channelAvatarSeed) { channelAvatarSeed }
     val listState = rememberLazyListState()
     val top = pageContentTop()
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(Modifier.fillMaxSize()) {
         if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
             Column(Modifier.padding(contentPadding.withTop(top))) {
@@ -545,7 +545,7 @@ fun SearchScreen(
     // Suggestions win while drafting; history when focused/empty and not mid-suggestion draft.
     val showHistory = !draft && history.isNotEmpty() && (focused || state.submitted.isEmpty())
     val bodyTop = pageBodyTop()
-    Box(Modifier.fillMaxSize().background(c.surface).overlayTouchBlock()) {
+    Box(Modifier.fillMaxSize().background(c.background).overlayTouchBlock()) {
         Box(Modifier.fillMaxSize()) {
         val listShown = showHistory || (draft && state.suggestions.isNotEmpty()) ||
             (state.results.isNotEmpty() && state.error == null)

@@ -193,7 +193,7 @@ fun isDarkTheme(): Boolean = when (ThemeSettings.mode) {
 fun YunoTheme(content: @Composable () -> Unit) {
     val dark = isDarkTheme()
     val scheme = if (dark) DarkColors else LightColors
-    SystemBars(dark, scheme.surface)
+    SystemBars(dark, scheme.background)
     MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = AppTypography) {
         CompositionLocalProvider(
             // No tap ripples anywhere: press feedback is the scale-down from Motion.kt.

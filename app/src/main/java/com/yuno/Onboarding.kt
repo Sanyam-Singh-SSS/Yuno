@@ -107,7 +107,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(c.surface)
+            .background(c.background)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
