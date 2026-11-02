@@ -84,17 +84,17 @@ fun topBarHeight(): Dp =
     WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + TopBarContentHeight
 
 /**
- * Where a page's first row starts: clear of the bar, plus [TopBarContentGap].
- * Home sits [HomeTitleLift] higher, the same lift BitChord gives its wordmark.
+ * Where a page's first row starts: [LargePageTitle]'s vertical centre lines up with
+ * the top bar's controls (same row as search and account).
  */
 @Composable
-fun pageContentTop(home: Boolean = false): Dp {
-    val base = topBarHeight() + TopBarContentGap
-    return if (home) (base - HomeTitleLift).coerceAtLeast(0.dp) else base
+fun pageContentTop(): Dp {
+    val barMid = topBarHeight() - TopBarContentHeight / 2
+    return (barMid - LargePageTitleBlockHeight / 2).coerceAtLeast(0.dp)
 }
 
-/** Home's heading is pulled up under the bar. BitChord's HOME_TITLE_LIFT. */
-private val HomeTitleLift = 28.dp
+/** [LargePageTitle] vertical padding plus ~41dp line box for 34sp display type. */
+private val LargePageTitleBlockHeight = 8.dp + 41.dp + 8.dp
 
 /** Floating controls — the back circle and each action slot. Apple's 44pt. */
 private val TopControl = 44.dp
@@ -108,16 +108,25 @@ private val ActionEdge = 1.5.dp
 /** Between the search field's pill and the actions beside it. */
 private val AccessoryGap = 8.dp
 
+/** Room below a [LargePageTitle] before the page body (not counted in bar alignment). */
+private val LargePageTitleContentGap = 12.dp
+
 /**
  * The large in-list page title. BitChord's displayLarge: SF Pro Display at 34sp,
- * weight 800, tracking −0.5, inset by the page gutter with 8dp above and below.
+ * weight 800, tracking −0.5, inset by the page gutter with 8dp above and
+ * [LargePageTitleContentGap] extra below before the first row of content.
  * It scrolls away with the list; the bar above it never carries a second copy.
  */
 @Composable
 fun LargePageTitle(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
-        modifier = modifier.padding(horizontal = PageGutter, vertical = 8.dp),
+        modifier = modifier.padding(
+            start = PageGutter,
+            end = PageGutter,
+            top = 8.dp,
+            bottom = 8.dp + LargePageTitleContentGap,
+        ),
         style = OwnDirectionText.merge(
             TextStyle(
                 fontFamily = SfProDisplay,
@@ -342,9 +351,9 @@ fun Modifier.floatingChrome(shape: CornerBasedShape): Modifier {
  * bottom fade turned over: opaque at the top edge, gone by 180dp, on a cubic
  * ease-in so the join isn't a line.
  *
- * Pass [listState] on Home. The fade stays off until that page's large title
- * has started to leave, the same way BitChord holds it off the wordmark.
- * Every other page keeps it up — content is always free to pass under the bar.
+ * Pass [listState] when the list's first item is a [LargePageTitle]. The fade stays
+ * off until that title has started to scroll away (Home, Subscriptions, Library, …).
+ * Without it the scrim sits over the title and reads grey.
  */
 @Composable
 fun PageTopFade(listState: LazyListState? = null, modifier: Modifier = Modifier) {

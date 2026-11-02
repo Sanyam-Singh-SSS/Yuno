@@ -175,7 +175,6 @@ fun SkipiiApp() {
     var accountSheet by remember { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
     var openChannel by remember { mutableStateOf<String?>(null) }
-    var openAllSubscriptions by remember { mutableStateOf(false) }
     var openSearch by remember { mutableStateOf(false) }
     LaunchedEffect(openSearch) { if (openSearch) search.reset() }
     // Kept after closing so the page can slide out with its content.
@@ -282,8 +281,7 @@ fun SkipiiApp() {
         if (reduced) showNowPlaying = false else playerSheetMotion.close()
     }
     BackHandler(enabled = !showNowPlaying && openSearch) { openSearch = false }
-    BackHandler(enabled = !showNowPlaying && openAllSubscriptions && openChannel == null) { openAllSubscriptions = false }
-    BackHandler(enabled = !showNowPlaying && tab != Tab.Home && openPlaylist == null && openChannel == null && !openAllSubscriptions && !openSearch) {
+    BackHandler(enabled = !showNowPlaying && tab != Tab.Home && openPlaylist == null && openChannel == null && !openSearch) {
         tab = if (tab == Tab.Shorts) shortsFrom else Tab.Home
     }
     BackHandler(enabled = !showNowPlaying && openPlaylist != null) { openPlaylist = null }
@@ -411,7 +409,6 @@ fun SkipiiApp() {
                     lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
                     onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
                     scrollToTop = scrollToTop[Tab.Subscriptions] ?: 0,
-                    onOpenAllSubscriptions = { openAllSubscriptions = true },
                 )
                 Tab.Shorts -> ShortsScreen(
                     shorts,
@@ -460,20 +457,6 @@ fun SkipiiApp() {
                     barShown = openPlaylist != null,
                 )
             }
-        }
-
-        // All subscriptions sits under an open channel so Back from the channel returns here.
-        AnimatedVisibility(
-            visible = openAllSubscriptions,
-            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
-            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
-        ) {
-            AllSubscriptionsScreen(
-                channels = lib.channels,
-                contentPadding = contentPadding,
-                onBack = { openAllSubscriptions = false },
-                barShown = openAllSubscriptions,
-            )
         }
 
         // A channel opens the same way, over everything below the mini-player.
@@ -545,13 +528,11 @@ fun SkipiiApp() {
                 selected == tab && openSearch -> openSearch = false
                 selected == tab && openChannel != null -> openChannel = null
                 selected == tab && openPlaylist != null -> openPlaylist = null
-                selected == tab && openAllSubscriptions -> openAllSubscriptions = false
                 selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
                 else -> {
                     if (selected == Tab.Shorts) shortsFrom = tab
                     openPlaylist = null
                     openChannel = null
-                    openAllSubscriptions = false
                     openSearch = false
                     tab = selected
                 }

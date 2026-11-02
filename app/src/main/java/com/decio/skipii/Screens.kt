@@ -91,7 +91,7 @@ fun HomeScreen(
         Box(Modifier.fillMaxSize()) {
             FeedList(
                 lib.home,
-                contentPadding.withTop(pageContentTop(home = true)),
+                contentPadding.withTop(pageContentTop()),
                 onOpen,
                 header = { item(key = "page-title") { LargePageTitle("Skipii") } },
                 scrollToTop = scrollToTop,
@@ -113,7 +113,6 @@ fun SubscriptionsScreen(
     onSignIn: () -> Unit,
     onAccount: () -> Unit,
     scrollToTop: Int = 0,
-    onOpenAllSubscriptions: () -> Unit = {},
 ) {
     val signedIn = Account.signedIn
     var selectedChannelId by remember { mutableStateOf<String?>(null) }
@@ -126,6 +125,7 @@ fun SubscriptionsScreen(
         }
     }
     LaunchedEffect(scrollToTop) { selectedChannelId = null }
+    val listState = rememberLazyListState()
     val selectedChannel = remember(selectedChannelId, lib.channels) {
         selectedChannelId?.let { id -> lib.channels.find { it.id == id } }
     }
@@ -147,7 +147,6 @@ fun SubscriptionsScreen(
                                 channels = lib.channels,
                                 selectedId = selectedChannelId,
                                 onSelect = { id -> selectedChannelId = id },
-                                onAll = onOpenAllSubscriptions,
                             )
                         }
                         EmptyState(
@@ -169,19 +168,19 @@ fun SubscriptionsScreen(
                                     channels = lib.channels,
                                     selectedId = selectedChannelId,
                                     onSelect = { id -> selectedChannelId = id },
-                                    onAll = onOpenAllSubscriptions,
                                 )
                             }
                         }
                     },
                     scrollToTop = scrollToTop,
                     indicatorTop = topBarHeight(),
+                    listState = listState,
                     videos = filteredVideos,
                     filterScrollKey = selectedChannelId,
                 )
             }
         } else {
-            LazyColumn(contentPadding = contentPadding.withTop(top)) {
+            LazyColumn(state = listState, contentPadding = contentPadding.withTop(top)) {
                 item { LargePageTitle("Subscriptions") }
                 item {
                     EmptyState(
@@ -193,7 +192,7 @@ fun SubscriptionsScreen(
                 }
             }
         }
-        PageTopFade()
+        PageTopFade(listState)
         }
         PageTopBar { HeaderActions(onSearch, onAccount) }
     }
@@ -204,87 +203,32 @@ private fun SubscriptionsChannelStrip(
     channels: List<ChannelRef>,
     selectedId: String?,
     onSelect: (String?) -> Unit,
-    onAll: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-    Box(Modifier.fillMaxWidth()) {
-        LazyRow(
-            contentPadding = PaddingValues(start = PageGutter, end = 76.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
-        ) {
-            items(channels, key = { it.id }) { ch ->
-                val selected = ch.id == selectedId
-                Column(
-                    Modifier
-                        .width(68.dp)
-                        .pressable { onSelect(if (selected) null else ch.id) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    ChannelAvatar(ch.avatar, ch.name, size = 56, selected = selected, ringSlot = true)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        ch.name,
-                        fontSize = 12.sp,
-                        color = c.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = PageGutter),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+    ) {
+        items(channels, key = { it.id }) { ch ->
+            val selected = ch.id == selectedId
+            Column(
+                Modifier
+                    .width(68.dp)
+                    .pressable { onSelect(if (selected) null else ch.id) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ChannelAvatar(ch.avatar, ch.name, size = 56, selected = selected, ringSlot = true)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    ch.name,
+                    fontSize = 12.sp,
+                    color = c.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 12.dp)
-                .pressable(onClick = onAll)
-                .clip(CircleShape)
-                .background(c.surfaceContainerHigh)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("All", color = c.onSurface, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-fun AllSubscriptionsScreen(
-    channels: List<ChannelRef>,
-    contentPadding: PaddingValues,
-    onBack: () -> Unit,
-    barShown: Boolean = true,
-) {
-    val c = MaterialTheme.colorScheme
-    val openChannel = LocalChannelOpener.current
-    Box(Modifier.fillMaxSize().background(c.surface)) {
-        Box(Modifier.fillMaxSize()) {
-        LazyColumn(contentPadding = contentPadding.withTop(pageContentTop())) {
-            item { LargePageTitle("All subscriptions") }
-            items(channels, key = { it.id }) { ch ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .pressable(onClick = { openChannel(ch.url) })
-                        .padding(horizontal = PageGutter, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ChannelAvatar(ch.avatar, ch.name, size = 48)
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        ch.name,
-                        modifier = Modifier.weight(1f),
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 16.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-        PageTopFade()
-        }
-        PageTopBar(onBack = onBack, shown = barShown)
     }
 }
 
@@ -308,6 +252,7 @@ fun LibraryScreen(
             if (lib.channels.isEmpty()) lib.loadChannels()
         }
     }
+    val listState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
         PullToRefresh(
@@ -316,7 +261,10 @@ fun LibraryScreen(
             onRefresh = { lib.history.refresh(); lib.loadPlaylists() },
             topPadding = topBarHeight(),
         ) {
-        LazyColumn(state = rememberScrollToTop(scrollToTop), contentPadding = contentPadding.withTop(pageContentTop())) {
+        LazyColumn(
+            state = rememberScrollToTop(scrollToTop, listState),
+            contentPadding = contentPadding.withTop(pageContentTop()),
+        ) {
             item(key = "page-title") { LargePageTitle("Library") }
             item(key = "historyTitle") { SectionTitle("History") }
             item(key = "history") {
@@ -365,7 +313,7 @@ fun LibraryScreen(
             }
         }
         }
-        PageTopFade()
+        PageTopFade(listState)
         }
         PageTopBar { HeaderActions(onSearch, onAccount) }
     }
@@ -429,6 +377,7 @@ fun PlaylistScreen(
 ) {
     LaunchedEffect(playlist.id) { feed.ensureLoaded() }
     val avatarSeed = remember(channelAvatarSeed) { channelAvatarSeed }
+    val listState = rememberLazyListState()
     val top = pageContentTop()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         Box(Modifier.fillMaxSize()) {
@@ -444,10 +393,11 @@ fun PlaylistScreen(
                 onOpen,
                 header = { item(key = "page-title") { LargePageTitle(playlist.title) } },
                 indicatorTop = topBarHeight(),
+                listState = listState,
                 channelAvatarSeed = avatarSeed,
             )
         }
-        PageTopFade()
+        PageTopFade(listState)
         }
         PageTopBar(onBack = onBack, shown = barShown)
     }
