@@ -240,15 +240,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
 private fun WelcomeStep() {
     val c = MaterialTheme.colorScheme
     Spacer(Modifier.height(24.dp))
-    Box(
-        Modifier
-            .size(88.dp)
-            .clip(SunnyShape)
-            .background(c.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        BrandMark()
-    }
+    BrandMark(size = 72.dp)
     Spacer(Modifier.height(28.dp))
     Text(
         "Welcome to Yuno",

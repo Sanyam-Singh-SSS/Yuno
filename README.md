@@ -6,9 +6,9 @@ No ads. Use it signed out, or sign in with Google to get your own recommendation
 subscriptions, history and playlists, with likes, subscribes and watch history syncing back.
 Sponsor segments get skipped with [SponsorBlock](https://sponsor.ajay.app).
 
-| Search | Player | Mini-player |
+| Home | Search | Shorts |
 |---|---|---|
-| ![Search](docs/screens/step1-search.png) | ![Player](docs/screens/step1-player.png) | ![Mini-player](docs/screens/step1-mini.png) |
+| ![Home](docs/screens/home.jpg) | ![Search](docs/screens/search.jpg) | ![Shorts](docs/screens/shorts.jpg) |
 
 ## Download
 

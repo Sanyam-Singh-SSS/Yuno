@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,12 +42,13 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.remember
@@ -102,24 +107,22 @@ internal val TopBarContentHeight = 52.dp
 internal val TopBarContentGap = 12.dp
 
 @Composable
-fun BrandMark() {
-    val c = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(width = 40.dp, height = 30.dp)
-            .clip(RoundedCornerShape(11.dp))
-            .background(Brush.linearGradient(listOf(c.primary, c.primary.copy(alpha = 0.82f)))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(SfIcons.FastForward, contentDescription = null, tint = c.onPrimary, modifier = Modifier.size(20.dp))
-    }
+fun BrandMark(modifier: Modifier = Modifier, size: Dp = 40.dp) {
+    val ink = MaterialTheme.colorScheme.onBackground
+    Image(
+        painter = painterResource(R.drawable.brand_mark),
+        contentDescription = "Yuno",
+        modifier = modifier.size(size),
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(ink, BlendMode.SrcIn),
+    )
 }
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+fun SectionTitle(text: String, modifier: Modifier = Modifier, top: Dp = 22.dp) {
     Text(
         text = text,
-        modifier = modifier.padding(start = PageGutter, end = PageGutter, top = 22.dp, bottom = 10.dp),
+        modifier = modifier.padding(start = PageGutter, end = PageGutter, top = top, bottom = 10.dp),
         fontFamily = RoundedHeavy,
         fontWeight = FontWeight.ExtraBold,
         fontSize = 21.sp,

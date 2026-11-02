@@ -94,7 +94,7 @@ fun HomeScreen(
                 lib.home,
                 contentPadding.withTop(pageContentTop()),
                 onOpen,
-                header = { item(key = "page-title") { LargePageTitle("Yuno") } },
+                header = { item(key = "page-title") { LargePageBrandMark() } },
                 scrollToTop = scrollToTop,
                 indicatorTop = topBarHeight(),
                 listState = listState,
@@ -142,7 +142,7 @@ fun SubscriptionsScreen(
             when {
                 selectedChannel != null && filteredVideos.isNullOrEmpty() && !lib.subscriptions.loading -> {
                     Column(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
-                        LargePageTitle("Subscriptions")
+                        LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize)
                         if (showStrip) {
                             SubscriptionsChannelStrip(
                                 channels = lib.channels,
@@ -162,7 +162,7 @@ fun SubscriptionsScreen(
                     contentPadding.withTop(top),
                     onOpen,
                     header = {
-                        item(key = "page-title") { LargePageTitle("Subscriptions") }
+                        item(key = "page-title") { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
                         if (showStrip) {
                             item(key = "channels") {
                                 SubscriptionsChannelStrip(
@@ -182,7 +182,7 @@ fun SubscriptionsScreen(
             }
         } else {
             LazyColumn(state = listState, contentPadding = contentPadding.withTop(top)) {
-                item { LargePageTitle("Subscriptions") }
+                item { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
                 item {
                     EmptyState(
                         icon = SfIcons.Subscriptions,
@@ -265,7 +265,7 @@ fun LibraryScreen(
             state = rememberScrollToTop(scrollToTop, listState),
             contentPadding = contentPadding.withTop(pageContentTop()),
         ) {
-            item(key = "page-title") { LargePageTitle("Library") }
+            item(key = "page-title") { LargePageTitle("Library", fontSize = LargePageTitleCompactFontSize) }
             item(key = "historyTitle") { SectionTitle("History") }
             item(key = "history") {
                 val history = if (signedIn) lib.history.videos else localHistory
@@ -544,16 +544,16 @@ fun SearchScreen(
         (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
     // Suggestions win while drafting; history when focused/empty and not mid-suggestion draft.
     val showHistory = !draft && history.isNotEmpty() && (focused || state.submitted.isEmpty())
-    val top = pageContentTop()
+    val bodyTop = pageBodyTop()
     Box(Modifier.fillMaxSize().background(c.surface).overlayTouchBlock()) {
         Box(Modifier.fillMaxSize()) {
         val listShown = showHistory || (draft && state.suggestions.isNotEmpty()) ||
             (state.results.isNotEmpty() && state.error == null)
         Box(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(top = if (listShown) 0.dp else top)) {
+        Box(Modifier.padding(top = if (listShown) 0.dp else bodyTop)) {
         when {
             draft && state.suggestions.isNotEmpty() -> {
-                LazyColumn(contentPadding = contentPadding.withTop(top)) {
+                LazyColumn(contentPadding = contentPadding.withTop(bodyTop)) {
                     items(state.suggestions, key = { it }) { suggestion ->
                         Row(
                             modifier = Modifier
@@ -587,11 +587,11 @@ fun SearchScreen(
             draft -> Unit
             showHistory -> SearchHistoryList(
                 history = history,
-                contentPadding = contentPadding.withTop(top),
+                contentPadding = contentPadding.withTop(bodyTop),
                 onSearch = { state.updateQuery(it); submit() },
             )
             state.loading && state.results.isEmpty() -> Column(
-                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(contentPadding.withTop(top)),
+                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(contentPadding),
             ) { FeedSkeletons() }
             state.error != null -> EmptyState(
                 icon = SfIcons.CloudOff,
@@ -616,7 +616,7 @@ fun SearchScreen(
                 // clearance has to be an item. Content padding would scroll away and
                 // the first thumbnail would sit under the back button.
                 LazyColumn(state = list, contentPadding = contentPadding) {
-                    item(key = "top-gap") { Spacer(Modifier.height(top)) }
+                    item(key = "top-gap") { Spacer(Modifier.height(bodyTop)) }
                     items(state.results, key = { it.id }) { video ->
                         VideoCard(video, onClick = { onOpen(video) })
                     }
@@ -727,7 +727,7 @@ private fun SearchHistoryList(history: List<String>, contentPadding: PaddingValu
             Row(
                 modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
             ) {
-                SectionTitle("Recent searches", Modifier.weight(1f).alignByBaseline())
+                SectionTitle("Recent searches", Modifier.weight(1f).alignByBaseline(), top = 0.dp)
                 Box(Modifier.alignByBaseline()) { TextLink("Clear all") { SearchHistory.clear() } }
             }
         }

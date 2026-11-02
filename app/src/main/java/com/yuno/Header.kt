@@ -1,6 +1,7 @@
 package com.yuno
 
 import androidx.compose.animation.core.EaseInCubic
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,13 +39,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yuno.icons.SfIcons
@@ -93,6 +100,10 @@ fun pageContentTop(): Dp {
     return (barMid - LargePageTitleBlockHeight / 2).coerceAtLeast(0.dp)
 }
 
+/** First body row when there is no in-list title (Search tab): same clearance as Home after its title. */
+@Composable
+fun pageBodyTop(): Dp = pageContentTop() + LargePageTitleBlockHeight + LargePageTitleContentGap
+
 /** [LargePageTitle] vertical padding plus ~41dp line box for 34sp display type. */
 private val LargePageTitleBlockHeight = 8.dp + 41.dp + 8.dp
 
@@ -117,21 +128,60 @@ private val LargePageTitleContentGap = 12.dp
  * [LargePageTitleContentGap] extra below before the first row of content.
  * It scrolls away with the list; the bar above it never carries a second copy.
  */
+/** Matches [LargePageTitle]'s 34sp cap height in the bar-alignment row. */
+private val LargePageBrandMarkSize = 42.dp
+
+/** Wordmark aspect (1438×736 source). */
+private const val WordmarkAspect = 1438f / 736f
+
 @Composable
-fun LargePageTitle(title: String, modifier: Modifier = Modifier) {
+fun LargePageBrandMark(modifier: Modifier = Modifier) {
+    val inset = (LargePageTitleBlockHeight - LargePageBrandMarkSize) / 2
+    val ink = MaterialTheme.colorScheme.onBackground
+    Image(
+        painter = painterResource(R.drawable.wordmark),
+        contentDescription = "Yuno",
+        modifier = modifier
+            .padding(
+                start = PageGutter,
+                end = PageGutter,
+                top = inset,
+                bottom = inset + LargePageTitleContentGap,
+            )
+            .height(LargePageBrandMarkSize)
+            .aspectRatio(WordmarkAspect),
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(ink, BlendMode.SrcIn),
+    )
+}
+
+/** Default in-list page title size; [LargePageTitleCompactFontSize] on Subscriptions / Library. */
+private val LargePageTitleFontSize = 34.sp
+internal val LargePageTitleCompactFontSize = 30.sp
+
+private fun titleCapHeight(fontSize: TextUnit): Dp =
+    (fontSize.value * 41f / LargePageTitleFontSize.value).dp
+
+@Composable
+fun LargePageTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = LargePageTitleFontSize,
+) {
+    val inset = (LargePageTitleBlockHeight - titleCapHeight(fontSize)) / 2
     Text(
         text = title,
         modifier = modifier.padding(
             start = PageGutter,
             end = PageGutter,
-            top = 8.dp,
-            bottom = 8.dp + LargePageTitleContentGap,
+            top = inset,
+            bottom = inset + LargePageTitleContentGap,
         ),
         style = OwnDirectionText.merge(
             TextStyle(
                 fontFamily = SfProDisplay,
                 fontWeight = FontWeight.W800,
-                fontSize = 34.sp,
+                fontSize = fontSize,
                 letterSpacing = (-0.5).sp,
                 color = MaterialTheme.colorScheme.onBackground,
             ),
