@@ -230,10 +230,10 @@ fun PlayerScreen(
                     .zIndex(0f)
                     .nestedScroll(sheetDismissScroll(sheetMotion))
                     .playerPageFade { dock.pageAlpha(sheetMotion.holding) },
-                contentPadding = PaddingValues(bottom = bottomClearance + 16.dp),
+                contentPadding = PaddingValues(bottom = bottomClearance + PageGutter),
             ) {
                 item(key = "info") {
-                    Column(Modifier.padding(horizontal = 20.dp)) {
+                    Column(Modifier.padding(horizontal = PageGutter)) {
                         Spacer(Modifier.height(18.dp))
                         Text(
                             item.title,
@@ -303,11 +303,11 @@ fun PlayerScreen(
                 if (related.isNotEmpty()) {
                     item(key = "moreTitle") { SectionTitle("More videos") }
                     items(related, key = { "rel-" + it.id }) { video ->
-                        Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                        Box(Modifier.padding(horizontal = PageGutter)) { VideoRow(video, onClick = { onOpen(video) }) }
                     }
                 } else if (state.loading) {
                     item(key = "loading") {
-                        Box(Modifier.padding(horizontal = 20.dp)) { MoreVideoSkeletons() }
+                        Box(Modifier.padding(horizontal = PageGutter)) { MoreVideoSkeletons() }
                     }
                 }
             }
@@ -659,9 +659,9 @@ private fun PlayerActions(state: PlayerState) {
     Row(
         Modifier
             .padding(top = 14.dp)
-            .bleed(20.dp)
+            .bleed(PageGutter)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = PageGutter),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

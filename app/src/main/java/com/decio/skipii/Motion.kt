@@ -64,6 +64,8 @@ fun rememberReducedMotion(): Boolean {
 fun Modifier.pressable(
     enabled: Boolean = true,
     pressedScale: Float = 0.94f,
+    /** A hold lifts this row into the blurred menu. */
+    lift: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier = composed {
@@ -71,6 +73,7 @@ fun Modifier.pressable(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val reduced = rememberReducedMotion()
+    val capture = rememberHoldCapture()
     val scale by animateFloatAsState(
         targetValue = if (pressed && !reduced) pressedScale else 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 1400f),
@@ -82,11 +85,18 @@ fun Modifier.pressable(
     // blocking the tap that should bring them back).
     if (!enabled) return@composed layer
     layer
+        .then(if (lift) Modifier.captureHold(capture) else Modifier)
         .combinedClickable(
             interactionSource = interaction,
             indication = null,
             enabled = enabled,
-            onLongClick = onLongClick?.let { long -> { view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); long() } },
+            onLongClick = onLongClick?.let { long ->
+                {
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    if (lift) capture.onHold()
+                    long()
+                }
+            },
             onClick = onClick,
         )
 }

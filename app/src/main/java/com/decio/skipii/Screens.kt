@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,11 +86,21 @@ fun HomeScreen(
     // to the account's recommendations after [LibraryData.reset].
     val signedIn = Account.signedIn
     LaunchedEffect(signedIn) { lib.home.ensureLoaded() }
-    CollapsingHeaderLayout(
-        resetKey = scrollToTop to lib.home.generation,
-        header = { ScreenHeader(title = "Skipii", brandMark = true) { UpdateAction(); HeaderActions(onSearch, onAccount) } },
-    ) { top ->
-        FeedList(lib.home, contentPadding.withTop(top), onOpen, scrollToTop = scrollToTop, indicatorTop = top)
+    val listState = rememberLazyListState()
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+            FeedList(
+                lib.home,
+                contentPadding.withTop(pageContentTop(home = true)),
+                onOpen,
+                header = { item(key = "page-title") { LargePageTitle("Skipii") } },
+                scrollToTop = scrollToTop,
+                indicatorTop = topBarHeight(),
+                listState = listState,
+            )
+            PageTopFade(listState)
+        }
+        PageTopBar { UpdateAction(); HeaderActions(onSearch, onAccount) }
     }
 }
 
@@ -122,56 +133,70 @@ fun SubscriptionsScreen(
         val ch = selectedChannel ?: return@remember null
         lib.subscriptions.videos.filter { it.fromChannel(ch) }
     }
-    CollapsingHeaderLayout(
-        resetKey = scrollToTop to listOf(lib.subscriptions.generation, selectedChannelId, lib.channels.size),
-        header = {
-            Column(Modifier.fillMaxWidth()) {
-                ScreenHeader(title = "Subscriptions") { HeaderActions(onSearch, onAccount) }
-                if (signedIn && lib.channels.isNotEmpty()) {
-                    SubscriptionsChannelStrip(
-                        channels = lib.channels,
-                        selectedId = selectedChannelId,
-                        onSelect = { id -> selectedChannelId = id },
-                        onAll = onOpenAllSubscriptions,
-                    )
-                }
-            }
-        },
-    ) { top ->
-            if (signedIn) {
-                when {
-                    selectedChannel != null && filteredVideos.isNullOrEmpty() && !lib.subscriptions.loading -> {
-                        Box(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
-                            EmptyState(
-                                icon = SfIcons.Subscriptions,
-                                title = "Nothing recent",
-                                body = "No new uploads from ${selectedChannel.name} in this feed yet.",
+    val top = pageContentTop()
+    val showStrip = signedIn && lib.channels.isNotEmpty()
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+        if (signedIn) {
+            when {
+                selectedChannel != null && filteredVideos.isNullOrEmpty() && !lib.subscriptions.loading -> {
+                    Column(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
+                        LargePageTitle("Subscriptions")
+                        if (showStrip) {
+                            SubscriptionsChannelStrip(
+                                channels = lib.channels,
+                                selectedId = selectedChannelId,
+                                onSelect = { id -> selectedChannelId = id },
+                                onAll = onOpenAllSubscriptions,
                             )
                         }
-                    }
-                    else -> FeedList(
-                        lib.subscriptions,
-                        contentPadding.withTop(top),
-                        onOpen,
-                        scrollToTop = scrollToTop,
-                        indicatorTop = top,
-                        videos = filteredVideos,
-                        filterScrollKey = selectedChannelId,
-                    )
-                }
-            } else {
-                LazyColumn(contentPadding = contentPadding.withTop(top)) {
-                    item {
                         EmptyState(
                             icon = SfIcons.Subscriptions,
-                            title = "Your subscriptions",
-                            body = "Sign in with Google to see new videos from the channels you follow.",
-                            action = { PillButton("Sign in with Google", onSignIn) },
+                            title = "Nothing recent",
+                            body = "No new uploads from ${selectedChannel.name} in this feed yet.",
                         )
                     }
                 }
+                else -> FeedList(
+                    lib.subscriptions,
+                    contentPadding.withTop(top),
+                    onOpen,
+                    header = {
+                        item(key = "page-title") { LargePageTitle("Subscriptions") }
+                        if (showStrip) {
+                            item(key = "channels") {
+                                SubscriptionsChannelStrip(
+                                    channels = lib.channels,
+                                    selectedId = selectedChannelId,
+                                    onSelect = { id -> selectedChannelId = id },
+                                    onAll = onOpenAllSubscriptions,
+                                )
+                            }
+                        }
+                    },
+                    scrollToTop = scrollToTop,
+                    indicatorTop = topBarHeight(),
+                    videos = filteredVideos,
+                    filterScrollKey = selectedChannelId,
+                )
+            }
+        } else {
+            LazyColumn(contentPadding = contentPadding.withTop(top)) {
+                item { LargePageTitle("Subscriptions") }
+                item {
+                    EmptyState(
+                        icon = SfIcons.Subscriptions,
+                        title = "Your subscriptions",
+                        body = "Sign in with Google to see new videos from the channels you follow.",
+                        action = { PillButton("Sign in with Google", onSignIn) },
+                    )
+                }
             }
         }
+        PageTopFade()
+        }
+        PageTopBar { HeaderActions(onSearch, onAccount) }
+    }
 }
 
 @Composable
@@ -184,7 +209,7 @@ private fun SubscriptionsChannelStrip(
     val c = MaterialTheme.colorScheme
     Box(Modifier.fillMaxWidth()) {
         LazyRow(
-            contentPadding = PaddingValues(start = 16.dp, end = 76.dp),
+            contentPadding = PaddingValues(start = PageGutter, end = 76.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
         ) {
@@ -228,46 +253,38 @@ fun AllSubscriptionsScreen(
     channels: List<ChannelRef>,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    barShown: Boolean = true,
 ) {
     val c = MaterialTheme.colorScheme
     val openChannel = LocalChannelOpener.current
     Box(Modifier.fillMaxSize().background(c.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            BackScreenHeader(onBack = onBack) {
-                Text(
-                    "All subscriptions",
-                    modifier = Modifier.weight(1f),
-                    fontFamily = RoundedHeavy,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 24.sp,
-                    letterSpacing = (-0.8).sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            LazyColumn(contentPadding = contentPadding) {
-                items(channels, key = { it.id }) { ch ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .pressable(onClick = { openChannel(ch.url) })
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ChannelAvatar(ch.avatar, ch.name, size = 48)
-                        Spacer(Modifier.width(14.dp))
-                        Text(
-                            ch.name,
-                            modifier = Modifier.weight(1f),
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 16.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+        Box(Modifier.fillMaxSize()) {
+        LazyColumn(contentPadding = contentPadding.withTop(pageContentTop())) {
+            item { LargePageTitle("All subscriptions") }
+            items(channels, key = { it.id }) { ch ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .pressable(onClick = { openChannel(ch.url) })
+                        .padding(horizontal = PageGutter, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ChannelAvatar(ch.avatar, ch.name, size = 48)
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        ch.name,
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
+        PageTopFade()
+        }
+        PageTopBar(onBack = onBack, shown = barShown)
     }
 }
 
@@ -291,23 +308,22 @@ fun LibraryScreen(
             if (lib.channels.isEmpty()) lib.loadChannels()
         }
     }
-    CollapsingHeaderLayout(
-        resetKey = scrollToTop to (if (signedIn) lib.history.generation else localHistory.size),
-        header = { ScreenHeader(title = "Library") { HeaderActions(onSearch, onAccount) } },
-    ) { top ->
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
         PullToRefresh(
             enabled = signedIn,
             refreshing = lib.history.refreshing,
             onRefresh = { lib.history.refresh(); lib.loadPlaylists() },
-            topPadding = top,
+            topPadding = topBarHeight(),
         ) {
-        LazyColumn(state = rememberScrollToTop(scrollToTop), contentPadding = contentPadding.withTop(top)) {
+        LazyColumn(state = rememberScrollToTop(scrollToTop), contentPadding = contentPadding.withTop(pageContentTop())) {
+            item(key = "page-title") { LargePageTitle("Library") }
             item(key = "historyTitle") { SectionTitle("History") }
             item(key = "history") {
                 val history = if (signedIn) lib.history.videos else localHistory
                 when {
                     history.isNotEmpty() -> LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        contentPadding = PaddingValues(horizontal = PageGutter),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(history.take(20), key = { "h-" + it.id }) { video -> HistoryCard(video) { onOpen(video) } }
@@ -317,7 +333,7 @@ fun LibraryScreen(
                         if (signedIn) lib.history.error ?: "Nothing watched yet."
                         else "Videos you watch on this phone show up here.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp,
-                        modifier = Modifier.padding(horizontal = 20.dp),
+                        modifier = Modifier.padding(horizontal = PageGutter),
                     )
                 }
             }
@@ -328,14 +344,14 @@ fun LibraryScreen(
                     PlaylistRef("LL", "Liked videos", null, null),
                 )
                 items((pinned + lib.playlists).chunked(2), key = { row -> row.joinToString { it.id } }) { row ->
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.padding(horizontal = PageGutter, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { pl -> PlaylistTile(pl, Modifier.weight(1f)) { onOpenPlaylist(pl) } }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             } else {
                 item(key = "signInNudge") {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    Column(Modifier.padding(horizontal = PageGutter, vertical = 16.dp)) {
                         Text(
                             "Sign in for Watch later, liked videos and playlists.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -349,14 +365,17 @@ fun LibraryScreen(
             }
         }
         }
+        PageTopFade()
+        }
+        PageTopBar { HeaderActions(onSearch, onAccount) }
     }
 }
 
 @Composable
 private fun HistoryCard(video: VideoItem, onClick: () -> Unit) {
     val menu = LocalVideoMenu.current
-    Column(Modifier.width(168.dp).prefetchOnPress(video.id).pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)) {
-        Box(Modifier.padding(horizontal = FeedVideoThumbInset)) {
+    Column(Modifier.width(168.dp).prefetchOnPress(video.id).pressable(pressedScale = 0.97f, lift = true, onLongClick = { menu(video) }, onClick = onClick)) {
+        Box {
             Thumbnail(video.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), radius = FeedVideoThumbRadius, videoId = video.id)
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true)
         }
@@ -406,29 +425,31 @@ fun PlaylistScreen(
     onBack: () -> Unit,
     onOpen: (VideoItem) -> Unit,
     channelAvatarSeed: Map<String, String?> = emptyMap(),
+    barShown: Boolean = true,
 ) {
     LaunchedEffect(playlist.id) { feed.ensureLoaded() }
     val avatarSeed = remember(channelAvatarSeed) { channelAvatarSeed }
+    val top = pageContentTop()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-    CollapsingHeaderLayout(
-        resetKey = feed.generation,
-        header = {
-        BackScreenHeader(onBack = onBack) {
-            Text(
-                playlist.title,
-                modifier = Modifier.weight(1f),
-                fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, letterSpacing = (-0.8).sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Box(Modifier.fillMaxSize()) {
+        if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
+            Column(Modifier.padding(contentPadding.withTop(top))) {
+                LargePageTitle(playlist.title)
+                EmptyState(SfIcons.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.")
+            }
+        } else {
+            FeedList(
+                feed,
+                contentPadding.withTop(top),
+                onOpen,
+                header = { item(key = "page-title") { LargePageTitle(playlist.title) } },
+                indicatorTop = topBarHeight(),
+                channelAvatarSeed = avatarSeed,
             )
         }
-        },
-    ) { top ->
-        if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
-            Box(Modifier.padding(top = top)) { EmptyState(SfIcons.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.") }
-        } else {
-            FeedList(feed, contentPadding.withTop(top), onOpen, indicatorTop = top, channelAvatarSeed = avatarSeed)
+        PageTopFade()
         }
-    }
+        PageTopBar(onBack = onBack, shown = barShown)
     }
 }
 
@@ -531,6 +552,7 @@ fun SearchScreen(
     onBack: () -> Unit,
     onOpen: (VideoItem) -> Unit,
     scrollToTop: Int = 0,
+    barShown: Boolean = true,
 ) {
     val c = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current
@@ -569,65 +591,9 @@ fun SearchScreen(
         (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
     // Suggestions win while drafting; history when focused/empty and not mid-suggestion draft.
     val showHistory = !draft && history.isNotEmpty() && (focused || state.submitted.isEmpty())
+    val top = pageContentTop()
     Box(Modifier.fillMaxSize().background(c.surface).overlayTouchBlock()) {
-    // The search bar rides with the header: both slide away together while scrolling results.
-    CollapsingHeaderLayout(
-        resetKey = Triple(scrollToTop, state.generation, showHistory),
-        header = {
-            BackScreenHeader(onBack = onBack) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(CircleShape)
-                        .background(c.surfaceContainerHigh)
-                        .padding(start = 16.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(SfIcons.Search, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Box(Modifier.weight(1f)) {
-                        if (state.query.isEmpty()) {
-                            Text(
-                                "Search YouTube",
-                                color = c.onSurfaceVariant,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        BasicTextField(
-                            value = state.query,
-                            onValueChange = state::updateQuery,
-                            singleLine = true,
-                            textStyle = OwnDirectionText.merge(TextStyle(color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)),
-                            cursorBrush = SolidColor(c.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { submit() }, onDone = { submit() }),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(searchFocus)
-                                .onFocusChanged { focused = it.isFocused }
-                                .onPreviewKeyEvent { e ->
-                                    if (e.key == Key.Enter || e.key == Key.NumPadEnter) {
-                                        if (e.type == KeyEventType.KeyDown) submit()
-                                        true
-                                    } else false
-                                },
-                        )
-                    }
-                    if (state.query.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier.size(40.dp).pressable {
-                                state.updateQuery("")
-                                showSearchKeyboard()
-                            },
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(SfIcons.Close, "Clear", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
-                    }
-                }
-            }
-        },
-    ) { top ->
+        Box(Modifier.fillMaxSize()) {
         val listShown = showHistory || (draft && state.suggestions.isNotEmpty()) ||
             (state.results.isNotEmpty() && state.error == null)
         Box(Modifier.fillMaxSize()) {
@@ -643,7 +609,7 @@ fun SearchScreen(
                                     state.updateQuery(suggestion)
                                     submit()
                                 }
-                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                                .padding(horizontal = PageGutter, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
@@ -693,7 +659,11 @@ fun SearchScreen(
             else -> {
                 val list = rememberScrollToTop(scrollToTop)
                 LaunchedEffect(state.generation) { list.scrollToItem(0) }
-                LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
+                // scrollToItem(0) pins this item to the top of the viewport, so the
+                // clearance has to be an item. Content padding would scroll away and
+                // the first thumbnail would sit under the back button.
+                LazyColumn(state = list, contentPadding = contentPadding) {
+                    item(key = "top-gap") { Spacer(Modifier.height(top)) }
                     items(state.results, key = { it.id }) { video ->
                         VideoCard(video, onClick = { onOpen(video) })
                     }
@@ -702,7 +672,97 @@ fun SearchScreen(
         }
         }
         }
+        PageTopFade()
+        }
+        PageTopBar(
+            onBack = onBack,
+            shown = barShown,
+            accessory = {
+                SearchBarField(
+                    query = state.query,
+                    onQueryChange = state::updateQuery,
+                    onSubmit = { submit() },
+                    onClear = {
+                        state.updateQuery("")
+                        showSearchKeyboard()
+                    },
+                    focusRequester = searchFocus,
+                    onFocusChanged = { focused = it },
+                )
+            },
+        )
     }
+}
+
+/** The search field, drawn inside the top bar's pill. BitChord's SearchField on a surface. */
+@Composable
+private fun SearchBarField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClear: () -> Unit,
+    focusRequester: FocusRequester,
+    onFocusChanged: (Boolean) -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val glass = LocalLiquidGlassEnabled.current && isGlassSupported()
+    val hint = if (glass) glassContentColor().copy(alpha = 0.6f) else c.onSurfaceVariant
+    val typed = if (glass) glassContentColor() else c.onBackground
+    val style = OwnDirectionText.merge(
+        TextStyle(
+            fontFamily = SfProDisplay,
+            fontWeight = FontWeight.W400,
+            fontSize = 16.sp,
+            letterSpacing = 0.2.sp,
+        ),
+    )
+    Row(
+        Modifier.fillMaxSize().padding(start = 8.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            SfIcons.Search,
+            contentDescription = "Search",
+            tint = hint,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .pressable(enabled = query.isNotBlank(), onClick = onSubmit)
+                .padding(6.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text("Search YouTube", style = style, color = hint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = style.merge(TextStyle(color = typed)),
+                cursorBrush = SolidColor(c.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }, onDone = { onSubmit() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { onFocusChanged(it.isFocused) }
+                    .onPreviewKeyEvent { e ->
+                        if (e.key == Key.Enter || e.key == Key.NumPadEnter) {
+                            if (e.type == KeyEventType.KeyDown) onSubmit()
+                            true
+                        } else false
+                    },
+            )
+        }
+        if (query.isNotEmpty()) {
+            Box(
+                Modifier.size(28.dp).clip(CircleShape).pressable(onClick = onClear),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(SfIcons.Close, "Clear", tint = hint, modifier = Modifier.size(18.dp))
+            }
+        }
     }
 }
 
@@ -725,7 +785,7 @@ private fun SearchHistoryList(history: List<String>, contentPadding: PaddingValu
                     .fillMaxWidth()
                     .pressable { onSearch(query) }
                     .height(52.dp)
-                    .padding(start = 24.dp, end = 8.dp),
+                    .padding(start = PageGutter, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(SfIcons.History, null, tint = c.onSurfaceVariant, modifier = Modifier.size(22.dp))

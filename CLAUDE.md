@@ -24,6 +24,8 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
 - No minimize button on the player (swipe down / Back). Tab bar = Castii's NavPill, but the
   selected tab uses full `primary` / `onPrimary` for contrast (not primaryContainer).
 - Queue: playlist is always [current, ...queue]; long-press any video → Play next / Add to queue.
+  The hold lifts that video the way BitChord's held menu does: the page blurs, the video sits on a
+  plate, and the actions hang under it (`VideoHeldMenu`).
 - 0.5.0 (2026-10-05): YouTube theme (`SEED_YOUTUBE`, Skipii's own, listed first); YouTube-style
   launcher icon (red rounded rect + double play, white background baked in, cut-out monochrome).
   Resume: `ResumeStore` (positions written by the service's `ResumeSaver`, read on open, thin

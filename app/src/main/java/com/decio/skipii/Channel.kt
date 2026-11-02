@@ -117,28 +117,16 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
 }
 
 @Composable
-fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: () -> Unit, onOpen: (VideoItem) -> Unit, onMessage: (String) -> Unit) {
+fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: () -> Unit, onOpen: (VideoItem) -> Unit, onMessage: (String) -> Unit, barShown: Boolean = true) {
     val c = MaterialTheme.colorScheme
     val list = rememberLazyListState()
     val nearEnd by remember {
         derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 4 }
     }
     LaunchedEffect(nearEnd, state.videos.size) { if (nearEnd && state.videos.isNotEmpty()) state.loadMore() }
+    val top = pageContentTop()
     Box(Modifier.fillMaxSize().background(c.surface)) {
-    CollapsingHeaderLayout(
-        header = {
-        BackScreenHeader(onBack = onBack) {
-            ChannelNameWithBadge(
-                state.details?.name.orEmpty(),
-                verified = state.details?.verified == true,
-                modifier = Modifier.weight(1f),
-                fontSize = 22.sp,
-                maxLines = 1,
-                letterSpacing = (-0.6).sp,
-            )
-        }
-        },
-    ) { top ->
+        Box(Modifier.fillMaxSize()) {
         val d = state.details
         when {
             d == null && state.error != null -> Box(Modifier.padding(top = top)) { EmptyState(
@@ -152,7 +140,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
             }
             else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
                 item(key = "header") {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
+                    Column(Modifier.padding(horizontal = PageGutter)) {
                         if (d.banner != null) {
                             Thumbnail(d.banner, Modifier.fillMaxWidth().aspectRatio(5.6f), radius = FeedVideoThumbRadius)
                             Spacer(Modifier.height(16.dp))
@@ -184,7 +172,9 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                 if (state.loading || state.hasMore) item { FeedSkeletons(1) }
             }
         }
-    }
+        PageTopFade()
+        }
+        PageTopBar(onBack = onBack, shown = barShown)
     }
 }
 

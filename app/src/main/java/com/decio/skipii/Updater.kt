@@ -405,6 +405,7 @@ fun UpdateAction() {
                 scaleY = 0.6f + 0.4f * v
             }
             .pressable(enabled = phase == AppUpdate.Phase.Ready || phase == AppUpdate.Phase.Failed) { AppUpdate.install(context) }
+            .padding(end = 8.dp)
             .height(44.dp)
             .widthIn(min = 104.dp)
             .clip(CircleShape)

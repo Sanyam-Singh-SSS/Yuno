@@ -173,8 +173,7 @@ class LibraryData(scope: CoroutineScope) {
  * tab never scrolls it.
  */
 @Composable
-fun rememberScrollToTop(signal: Int): LazyListState {
-    val state = rememberLazyListState()
+fun rememberScrollToTop(signal: Int, state: LazyListState = rememberLazyListState()): LazyListState {
     val initial = remember { signal }
     LaunchedEffect(signal) { if (signal != initial) state.animateScrollToItem(0) }
     return state
@@ -189,8 +188,10 @@ fun FeedList(
     header: LazyListScope.() -> Unit = {},
     scrollToTop: Int = 0,
     pullToRefresh: Boolean = true,
-    /** Collapsing header height: the refresh spinner appears just below it. */
+    /** Where the refresh spinner rests. The top bar's height puts it just under the controls. */
     indicatorTop: Dp = 0.dp,
+    /** Shared with the page so a fade can follow this list. Created here when omitted. */
+    listState: LazyListState? = null,
     /** When set, shown instead of [FeedState.videos] (e.g. subscriptions channel filter). */
     videos: List<VideoItem>? = null,
     /** Scrolls the list to the top when this changes (e.g. subscriptions channel pick). */
@@ -203,7 +204,8 @@ fun FeedList(
     LaunchedEffect(listVideos, channelAvatarSeed) {
         ChannelAvatars.resolve(scope, listVideos, channelAvatarSeed)
     }
-    val list = rememberScrollToTop(scrollToTop)
+    val created = rememberLazyListState()
+    val list = rememberScrollToTop(scrollToTop, listState ?: created)
     // Fresh content always starts at the top (first load and every refresh).
     LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
     val nearEnd by remember {

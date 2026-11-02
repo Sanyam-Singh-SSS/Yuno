@@ -62,6 +62,11 @@ private class LayerBackdropNode(
     var backdrop: LayerBackdrop
 ) : DrawModifierNode, GlobalPositionAwareModifierNode, Modifier.Node() {
 
+    // Several pages record into the one shared backdrop (the page under an
+    // overlay, and the overlay). Detach of the one that closed must not wipe
+    // the coordinates the one still on screen just published.
+    private var recordedCoordinates: LayoutCoordinates? = null
+
     override fun ContentDrawScope.draw() {
         // Vendored change: record once and composite, rather than upstream's
         // draw-then-record.
@@ -89,11 +94,15 @@ private class LayerBackdropNode(
 
     override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
         if (coordinates.isAttached) {
+            recordedCoordinates = coordinates
             backdrop.layerCoordinates = coordinates
         }
     }
 
     override fun onDetach() {
-        backdrop.layerCoordinates = null
+        if (backdrop.layerCoordinates === recordedCoordinates) {
+            backdrop.layerCoordinates = null
+        }
+        recordedCoordinates = null
     }
 }

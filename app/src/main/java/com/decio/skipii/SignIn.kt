@@ -64,7 +64,7 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().background(c.surface).statusBarsPadding().navigationBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).pressable(onClick = onCancel), contentAlignment = Alignment.Center) {
                 Icon(SfIcons.Close, "Cancel")
             }
@@ -138,28 +138,6 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
     }
 }
 
-/** Search + account in the main tab headers (search left of the avatar). */
-@Composable
-fun HeaderActions(onSearch: () -> Unit, onAccount: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        CircleAction(SfIcons.Search, "Search", onSearch)
-        AccountAction(onAccount)
-    }
-}
-
-/** Account button in the headers: the avatar when signed in, a person icon otherwise. */
-@Composable
-fun AccountAction(onClick: () -> Unit) {
-    val profile = Account.profile
-    if (profile == null) {
-        CircleAction(SfIcons.AccountCircle, "Sign in", onClick)
-    } else {
-        Box(Modifier.size(44.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
-            ChannelAvatar(profile.avatar, profile.name, size = 40)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () -> Unit) {
@@ -170,7 +148,7 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
         containerColor = c.surfaceContainerLow,
     ) {
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = PageGutter).padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (profile == null) {

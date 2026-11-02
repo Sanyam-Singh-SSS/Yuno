@@ -134,7 +134,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = PageGutter),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(28.dp))
@@ -149,7 +149,7 @@ fun OnboardingScreen(onFinished: () -> Unit, onSignIn: () -> Unit) {
         }
 
         // Bottom chrome: progress + back/next (middle steps), or skip + FAB (ends).
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = TopBarContentGap)) {
             if (step in 1 until STEP_COUNT - 1) {
                 LinearProgressIndicator(
                     progress = { progress },

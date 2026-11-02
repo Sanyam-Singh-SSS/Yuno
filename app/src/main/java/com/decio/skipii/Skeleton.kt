@@ -101,7 +101,7 @@ fun VideoCardSkeleton() {
                 .aspectRatio(16f / 9f)
                 .bone(RoundedCornerShape(FeedVideoThumbRadius.dp)),
         )
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(Modifier.padding(horizontal = PageGutter, vertical = 12.dp)) {
             Box(Modifier.size(40.dp).bone(CircleShape))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -143,14 +143,13 @@ private fun VideoRowSkeleton() {
 fun HistorySkeletons() {
     SkeletonGroup {
         Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = PageGutter),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             repeat(3) {
                 Column(Modifier.width(168.dp)) {
                     Box(
                         Modifier
-                            .padding(horizontal = FeedVideoThumbInset)
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
                             .bone(RoundedCornerShape(FeedVideoThumbRadius.dp)),
@@ -195,7 +194,7 @@ fun CommentSkeleton(avatar: Dp = 36.dp, start: Dp = 0.dp, lines: Int = 2) {
 fun ChannelSkeletons() {
     SkeletonGroup {
         Column {
-            Column(Modifier.padding(horizontal = 16.dp)) {
+            Column(Modifier.padding(horizontal = PageGutter)) {
                 Box(Modifier.fillMaxWidth().aspectRatio(5.6f).bone(RoundedCornerShape(FeedVideoThumbRadius.dp)))
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -223,7 +222,7 @@ fun PlaylistChoiceSkeletons(count: Int = 5) {
         Column {
             repeat(count) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(24.dp).bone(CircleShape))

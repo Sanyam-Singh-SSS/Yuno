@@ -852,13 +852,13 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
         Text(
             "Quality",
             fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = PageGutter, end = PageGutter, bottom = 8.dp),
         )
         state.playingFormat?.let {
             Text(
                 "Playing $it",
                 color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = PageGutter, end = PageGutter, bottom = 8.dp),
             )
         }
         SheetRow("Auto", "Best up to 1080p" + ((state.decodedHeight?.let { "${it}p" } ?: details.quality)?.let { " · playing $it" } ?: ""), chosen == null) {
@@ -886,7 +886,7 @@ fun SpeedSheet(state: PlayerState, onDismiss: () -> Unit) {
             Text(
                 "Speed",
                 fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = PageGutter, end = PageGutter, bottom = 8.dp),
             )
             SpeedPanelContent(state)
             Spacer(Modifier.height(20.dp))
@@ -910,21 +910,19 @@ fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
         Text(
             "Chapters",
             fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = PageGutter, end = PageGutter, bottom = 8.dp),
         )
         Text(
             "${current + 1} of ${chapters.size}",
             color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = PageGutter, end = PageGutter, bottom = 8.dp),
         )
         // Scrolls: a long chapter list must stay reachable in landscape, where the sheet is short.
         LazyColumn(Modifier.height(340.dp)) {
             itemsIndexed(chapters) { index, chapter ->
-                Box(Modifier.padding(horizontal = 12.dp)) {
-                    SheetRow(chapter.title, formatDuration(chapter.startMs), index == current) {
-                        state.seekTo(chapter.startMs)
-                        onDismiss()
-                    }
+                SheetRow(chapter.title, formatDuration(chapter.startMs), index == current) {
+                    state.seekTo(chapter.startMs)
+                    onDismiss()
                 }
             }
             item { Spacer(Modifier.height(20.dp)) }
@@ -948,10 +946,10 @@ private fun SheetRow(title: String, subtitle: String?, selected: Boolean, onClic
         modifier = Modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.98f, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .padding(horizontal = PageGutter, vertical = 2.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(if (selected) c.primaryContainer else c.primaryContainer.copy(alpha = 0f))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

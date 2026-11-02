@@ -14,8 +14,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 
-/** How far the sheet rises before the page starts to appear. */
-internal const val PAGE_FADE_LEAD = 0.15f
+/**
+ * How far the sheet rises before the page starts to appear.
+ *
+ * The page is the thing covering the tab buttons. At 0.15 they washed out in
+ * the first part of the pull and only came back once the video had nearly
+ * landed in the mini player. Holding the page clear until halfway keeps the
+ * buttons up while the video leaves, and brings them back while it is still
+ * on the way down.
+ */
+internal const val PAGE_FADE_LEAD = 0.5f
 
 /**
  * The mini player the expanded player docks into (BitChord [PlayerDock]).

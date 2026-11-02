@@ -283,7 +283,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
             .pressable(enabled = !state.disabled && (state.comments.isNotEmpty() || !state.loading), pressedScale = 0.98f, onClick = onOpen)
             .clip(shape)
             .background(c.surfaceContainerLow)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = PageGutter, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
@@ -427,7 +427,7 @@ fun CommentsPanel(
                 Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), Alignment.Center) {
                     Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(c.onSurfaceVariant.copy(alpha = 0.45f)))
                 }
-                Row(Modifier.padding(start = 20.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(start = PageGutter, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Comments", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
                     if (state.total > 0) {
                         Spacer(Modifier.width(8.dp))
@@ -449,10 +449,10 @@ fun CommentsPanel(
                     CommentRow(it, state, creatorAvatar, creatorName)
                 }
                 if (state.comments.isEmpty() && state.loading) item {
-                    CommentSkeletons(start = 20.dp)
+                    CommentSkeletons(start = PageGutter)
                 }
                 if (state.comments.isNotEmpty() && (state.loading || state.hasMore)) item {
-                    CommentSkeletons(count = 2, start = 20.dp)
+                    CommentSkeletons(count = 2, start = PageGutter)
                 }
                 if (!state.loading && state.comments.isEmpty()) item {
                     Text(
@@ -487,7 +487,7 @@ private fun Composer(state: CommentsState) {
     }
     // Tapping Reply focuses the field.
     LaunchedEffect(state.replyingTo) { if (state.replyingTo != null) runCatching { requester.requestFocus() } }
-    Column(Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 12.dp, vertical = 10.dp)) {
+    Column(Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = PageGutter, vertical = 10.dp)) {
         state.replyingTo?.let { target ->
             Row(Modifier.padding(start = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Replying to ${target.displayName()}", color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -564,7 +564,7 @@ private fun CommentRow(
     isReply: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(start = if (isReply) 62.dp else 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = if (isReply) PageGutter + 42.dp else PageGutter, end = PageGutter, top = 10.dp, bottom = 6.dp)) {
         ChannelAvatar(comment.avatar, comment.author, size = if (isReply) 28 else 36)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

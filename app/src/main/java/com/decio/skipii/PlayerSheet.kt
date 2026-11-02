@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
@@ -58,6 +60,9 @@ fun NowPlayingSheet(
     onDismiss: () -> Unit,
     onFullscreen: () -> Unit,
     bottomClearance: Dp,
+    heldVideo: VideoItem? = null,
+    heldOrigin: HeldItem? = null,
+    onDismissHeld: () -> Unit = {},
 ) {
     if (!visible || player.current == null) return
     motion.windowInfo = LocalWindowInfo.current
@@ -73,7 +78,10 @@ fun NowPlayingSheet(
             motion.onSheetGone()
         }
     }
+    val sheetHaze = remember { HazeState() }
     PlayerSheetWindow(motion, reducedMotion, fullscreen) {
+        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().hazeSource(sheetHaze)) {
         BackHandler(enabled = true) {
             when {
                 // The sheet window has the back press. Leaving fullscreen has to
@@ -120,6 +128,16 @@ fun NowPlayingSheet(
                 )
             }
         }
+        }
+        }
+        VideoHeldMenu(
+            video = heldVideo,
+            held = heldOrigin,
+            hazeState = sheetHaze,
+            player = player,
+            onOpen = onOpen,
+            onDismiss = onDismissHeld,
+        )
         }
     }
 }

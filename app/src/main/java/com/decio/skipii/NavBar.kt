@@ -68,9 +68,17 @@ import kotlin.math.roundToInt
 // BitChord-style floating capsule: full width minus gutters, every tab shows its label.
 // Mini-player still sits 8 dp above it. Height stays 62 dp, the same the Shorts bar morphs from.
 internal val NavHeight = 62.dp
-internal val NavWidth = 400.dp
-/** Side margin of the resting tab bar, matching BitChord's 19 dp. */
+/** How wide the floating bars are ever allowed to get. BitChord's FLOATING_BAR_MAX_WIDTH. */
+internal val FloatingBarMaxWidth = 440.dp
+/** Side margin of the resting tab bar. BitChord's NAV_BAR_GUTTER, wider than [PageGutter]. */
 internal val NavBarGutter = 19.dp
+/** How far above the navigation inset the bar sits. BitChord's NAV_BAR_LIFT. */
+internal val NavBarLift = 6.dp
+/** The bar never sits closer than a gesture inset. BitChord's GESTURE_BAR_FLOOR. */
+internal val GestureBarFloor = 15.dp
+/** List clearance with nothing playing, and with a song up. BitChord's list padding. */
+internal val ListBottomIdle = 140.dp
+internal val ListBottomPlaying = 210.dp
 private val TabPillInset = 4.dp
 // BitChord's tab sizing (FloatingBottomBar.kt): 28 dp glyphs with 6.5 dp of tab
 // padding, which comes to the 62 dp bar.

@@ -79,38 +79,6 @@ import androidx.compose.ui.text.style.TextAlign
 import android.view.inputmethod.InputMethodManager
 import com.decio.skipii.icons.SfIcons
 
-// ── Long-press options ─────────────────────────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Unit) {
-    val c = MaterialTheme.colorScheme
-    val context = LocalContext.current
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
-        Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Thumbnail(video.thumbnail, Modifier.width(112.dp).aspectRatio(16f / 9f), radius = 14)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(video.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(video.channel, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
-            }
-        }
-        OptionRow(SfIcons.PlaylistPlay, "Play next") { player.playNext(video); onDismiss() }
-        OptionRow(SfIcons.PlaylistAdd, "Add to queue") { player.addToQueue(video); onDismiss() }
-        OptionRow(SfIcons.Clock, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
-        OptionRow(SfIcons.LibraryAdd, "Save to playlist") { onDismiss(); player.openPlaylists(video) }
-        OptionRow(SfIcons.Share, "Share") {
-            shareLink(context, "https://youtu.be/${video.id}", video.title)
-            onDismiss()
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
 // ── Save to playlist (GitHub issue #12) ─────────────────────────────────────────
 
 /**
@@ -131,17 +99,17 @@ fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem) {
             Text(
                 "Save to playlist",
                 fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = PageGutter),
             )
             Text(
                 video.title, color = c.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 10.dp),
+                modifier = Modifier.padding(start = PageGutter, end = PageGutter, top = 2.dp, bottom = 10.dp),
             )
             val choices = player.playlistChoices
             val error = player.playlistError
             when {
-                error != null -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                error != null -> Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(error, color = c.onSurfaceVariant, fontSize = 14.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
                     PillButton("Try again", { player.openPlaylists(video) })
@@ -163,7 +131,7 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val on = choice.contains == true
     Row(
-        Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = PageGutter, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(if (choice.id == "WL") SfIcons.Clock else SfIcons.PlaylistPlay, null, tint = c.onSurface)
@@ -215,7 +183,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
         onCreate(name, privacy)
         open = false
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp)) {
         Box(
             Modifier.fillMaxWidth().height(56.dp).clip(CircleShape).background(c.surfaceContainerHigh).padding(horizontal = 20.dp),
             contentAlignment = Alignment.CenterStart,
@@ -269,7 +237,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
 private fun OptionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = 24.dp, vertical = 15.dp),
+        Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = PageGutter, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = c.onSurface)
@@ -355,7 +323,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
     }
     val clearAlpha by animateFloatAsState(if (leavingRows == null && player.queue.isNotEmpty()) 1f else 0f, label = "clearAlpha")
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surfaceContainerLow) {
-        Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = PageGutter).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Queue", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, modifier = Modifier.weight(1f))
             Text(
                 "Clear", color = c.primary, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
@@ -384,7 +352,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                         // Top to bottom, one after another, counted from the first row on screen.
                         val order = (index - listState.firstVisibleItemIndex).coerceAtLeast(0)
                         SlideAway(slide = { Motion.Exit.transform(((sweep.value - SlideAwayStaggerMs * order) / SlideAwayMs).coerceIn(0f, 1f)) }) {
-                            Box(Modifier.padding(horizontal = 20.dp)) {
+                            Box(Modifier.padding(horizontal = PageGutter)) {
                                 VideoRow(video, onClick = { player.playFromQueue(index); onDismiss() }) {
                                     Box(Modifier.size(40.dp).pressable { player.removeFromQueue(index) }, contentAlignment = Alignment.Center) {
                                         Icon(SfIcons.Close, "Remove from queue", tint = c.onSurfaceVariant)
@@ -397,7 +365,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                 Text(
                     "Nothing queued. Press and hold a video to add it.",
                     color = c.onSurfaceVariant, fontSize = 14.sp,
-                    modifier = Modifier.graphicsLayer { alpha = emptied.value }.padding(horizontal = 20.dp, vertical = 24.dp),
+                    modifier = Modifier.graphicsLayer { alpha = emptied.value }.padding(horizontal = PageGutter, vertical = 24.dp),
                 )
             },
         ) { measurables, constraints ->

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.mandatorySystemGestures
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
@@ -93,59 +91,14 @@ val SunnyShape = LobedShape(lobes = 8, depth = 0.05f)
 
 // ── Header ─────────────────────────────────────────────────────────────────────
 
-private val ScreenHeaderHorizontal = 16.dp
+/** Left and right inset of every page, sheet and the mini player. BitChord's PAGE_GUTTER. */
+internal val PageGutter = 16.dp
 
-/** Seamless header: same surface as the page, heavy title, round 44 dp actions. */
-@Composable
-fun ScreenHeader(
-    title: String,
-    brandMark: Boolean = false,
-    actions: @Composable () -> Unit = {},
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = ScreenHeaderHorizontal, vertical = 12.dp)
-            .height(44.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (brandMark) {
-            BrandMark()
-            Spacer(Modifier.width(9.dp))
-        }
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            fontFamily = RoundedHeavy,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 31.sp,
-            letterSpacing = (-1.3).sp,
-            maxLines = 1,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { actions() }
-    }
-}
+/** The top bar's own height under the status inset. BitChord's TopBarContentHeight. */
+internal val TopBarContentHeight = 52.dp
 
-/** Back + title row for playlist, channel, and other overlay pages — same insets as [ScreenHeader]. */
-@Composable
-fun BackScreenHeader(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable RowScope.() -> Unit,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = ScreenHeaderHorizontal, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircleAction(SfIcons.ArrowBack, "Back", onBack)
-        Spacer(Modifier.width(12.dp))
-        content()
-    }
-}
+/** Room between that bar and the first row. BitChord's TopBarContentGap. */
+internal val TopBarContentGap = 12.dp
 
 @Composable
 fun BrandMark() {
@@ -162,25 +115,10 @@ fun BrandMark() {
 }
 
 @Composable
-fun CircleAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
-    val c = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .pressable(onClick = onClick)
-            .clip(CircleShape)
-            .background(c.surfaceContainerHigh),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription, tint = c.onSurface, modifier = Modifier.size(22.dp))
-    }
-}
-
-@Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 10.dp),
+        modifier = modifier.padding(start = PageGutter, end = PageGutter, top = 22.dp, bottom = 10.dp),
         fontFamily = RoundedHeavy,
         fontWeight = FontWeight.ExtraBold,
         fontSize = 21.sp,
@@ -243,8 +181,8 @@ fun Modifier.prefetchOnPress(videoId: String): Modifier = pointerInput(videoId) 
 /** Long-pressing any video opens its options (Play next, Add to queue, …). Provided by the app shell. */
 val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 
-/** Home / Subscriptions / channel uploads — slight inset + soft corners on the thumb. */
-internal val FeedVideoThumbInset = 9.dp
+/** Home / Subscriptions / channel uploads — the page gutter, so the thumb lines up with the title. */
+internal val FeedVideoThumbInset = PageGutter
 internal const val FeedVideoThumbRadius = 9
 
 @Composable
@@ -330,11 +268,11 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
     val c = MaterialTheme.colorScheme
     val menu = LocalVideoMenu.current
     Column(
-        modifier = modifier
+        modifier
             .fillMaxWidth()
+            .padding(bottom = 16.dp)
             .prefetchOnPress(video.id)
-            .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)
-            .padding(bottom = 16.dp),
+            .pressable(pressedScale = 0.97f, lift = true, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         Box(
             Modifier
@@ -350,7 +288,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(5.dp))
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
-        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(modifier = Modifier.padding(horizontal = PageGutter, vertical = 12.dp)) {
             val openChannel = LocalChannelOpener.current
             Box(Modifier.pressable(enabled = video.channelUrl != null) { video.channelUrl?.let(openChannel) }) {
                 ChannelAvatar(video.feedAvatar(), video.channel)
@@ -386,9 +324,9 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 6.dp)
             .prefetchOnPress(video.id)
-            .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)
-            .padding(vertical = 6.dp),
+            .pressable(pressedScale = 0.97f, lift = true, onLongClick = { menu(video) }, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(140.dp)) {
@@ -434,7 +372,7 @@ fun EmptyState(
 ) {
     val c = MaterialTheme.colorScheme
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 48.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = PageGutter + 6.dp, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(

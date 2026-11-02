@@ -25,7 +25,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -246,19 +245,17 @@ fun SkipiiApp() {
     }
 
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // As in Castii: at least 8 dp off the bottom, and extra clearance above a three-button bar.
-    val stackBottom = navBottom.coerceAtLeast(8.dp) +
-        if (WindowInsets.tappableElement.asPaddingValues().calculateBottomPadding() > 0.dp) 10.dp else 0.dp
+    // BitChord's floatingBarInsets + NAV_BAR_LIFT: the system bar, never less than a
+    // gesture inset, then 6 dp more.
+    val stackBottom = navBottom.coerceAtLeast(GestureBarFloor) + NavBarLift
     var optionsFor by remember { mutableStateOf<VideoItem?>(null) }
+    var optionsHeld by remember { mutableStateOf<HeldItem?>(null) }
     // On Shorts the app's video waits, paused, out of sight (no mini-player).
     val glassOn = LiquidGlassSetting.enabled && isGlassSupported()
     val hasMini = player.current != null && tab != Tab.Shorts && !glassOn
-    // Lists scroll fully clear of the floating nav (and mini-player when present).
+    // BitChord's list padding: 210 while a song is up, 140 otherwise.
     val contentPadding = PaddingValues(
-        bottom = stackBottom + NavHeight +
-            (if (hasMini) MiniHeight + MiniGap else 0.dp) +
-            (if (glassOn && player.current != null && tab != Tab.Shorts) 56.dp else 0.dp) +
-            16.dp,
+        bottom = if (player.current != null && tab != Tab.Shorts) ListBottomPlaying else ListBottomIdle,
     )
 
     // Fullscreen is whenever the open player is shown in landscape (rotation or button).
@@ -364,6 +361,10 @@ fun SkipiiApp() {
         }
     }
     val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
+    val topChrome = remember { TopChromeHost() }
+    // One recording of everything on the page, so the glass matches the screen
+    // during a transition instead of holding the page that just closed. The
+    // top buttons are drawn by TopChromeLayer, outside this box.
     val pageSample = Modifier
         .hazeSource(hazeState)
         .then(if (glassOn) Modifier.layerBackdrop(appBackdrop) else Modifier)
@@ -377,11 +378,15 @@ fun SkipiiApp() {
         CompositionLocalProvider(
             LocalVideoSurface provides if (pip.active) NoVideoSurface else sharedSurface,
             LocalPictureInPicture provides pip,
-            LocalVideoMenu provides { optionsFor = it },
+            LocalVideoMenu provides { video ->
+                optionsHeld = LongPressOrigin.consume()
+                optionsFor = video
+            },
             LocalChannelOpener provides { url -> showChannel(url) },
             LocalAppHaze provides hazeState,
             LocalLiquidGlassEnabled provides glassOn,
             LocalAppBackdrop provides appBackdrop,
+            LocalTopChrome provides topChrome,
         ) {
         Box(Modifier.fillMaxSize().then(pageSample)) {
         AnimatedContent(
@@ -433,6 +438,7 @@ fun SkipiiApp() {
                 contentPadding,
                 onBack = { openSearch = false },
                 onOpen = player::open,
+                barShown = openSearch,
             )
         }
 
@@ -450,6 +456,7 @@ fun SkipiiApp() {
                     onBack = { openPlaylist = null },
                     onOpen = player::open,
                     channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
+                    barShown = openPlaylist != null,
                 )
             }
         }
@@ -464,6 +471,7 @@ fun SkipiiApp() {
                 channels = lib.channels,
                 contentPadding = contentPadding,
                 onBack = { openAllSubscriptions = false },
+                barShown = openAllSubscriptions,
             )
         }
 
@@ -476,6 +484,7 @@ fun SkipiiApp() {
             channelState?.let { ch ->
                 ChannelScreen(
                     ch, contentPadding, onBack = { openChannel = null },
+                    barShown = openChannel != null,
                     // A video from a channel opened in Shorts plays in the app's player: Shorts closes.
                     onOpen = { v -> if (tab == Tab.Shorts) tab = shortsFrom; player.open(v) },
                     onMessage = { player.actionMessage = it },
@@ -483,6 +492,12 @@ fun SkipiiApp() {
             }
         }
         } // page backdrop (tabs + overlays)
+
+        // Stays put while the player opens and closes. The player is its own window,
+        // so it covers these the way it covers the tab bar; removing them for
+        // showNowPlaying made them vanish at the start of the expand and return
+        // only after the collapse.
+        TopChromeLayer(topChrome, Modifier.align(Alignment.TopCenter).fillMaxWidth())
 
         // Ledgii's bottom vignette
         val pageColor = c.surface
@@ -511,7 +526,10 @@ fun SkipiiApp() {
                 onOpen = player::open,
                 onDismiss = { showNowPlaying = false },
                 onFullscreen = { toggleFullscreen() },
-                bottomClearance = stackBottom + NavHeight + 16.dp,
+                bottomClearance = stackBottom + NavHeight + PageGutter,
+                heldVideo = optionsFor.takeIf { showNowPlaying },
+                heldOrigin = optionsHeld,
+                onDismissHeld = { optionsFor = null },
             )
         }
 
@@ -552,6 +570,8 @@ fun SkipiiApp() {
                 pull = playerPull,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .widthIn(max = FloatingBarMaxWidth)
+                    .fillMaxWidth()
                     .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom)
                     .graphicsLayer {
                         translationY = navAside * (NavHeight + stackBottom + 24.dp).toPx()
@@ -562,9 +582,9 @@ fun SkipiiApp() {
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom)
-                    .widthIn(max = NavWidth)
+                    .widthIn(max = FloatingBarMaxWidth)
                     .fillMaxWidth()
+                    .padding(bottom = stackBottom)
                     .graphicsLayer {
                         translationY = navAside * (NavHeight + stackBottom + 24.dp).toPx()
                         alpha = 1f - navAside
@@ -578,7 +598,7 @@ fun SkipiiApp() {
                         showVideo = !showFullscreen && !playerDock.coversMiniArt,
                         dock = activeDock,
                         pull = playerPull,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.padding(horizontal = PageGutter).fillMaxWidth(),
                     )
                     Spacer(Modifier.height(MiniGap))
                 }
@@ -587,7 +607,7 @@ fun SkipiiApp() {
                     onSelect = onSelectTab,
                     shorts = { 0f },
                     tabsEnabled = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.padding(horizontal = NavBarGutter).fillMaxWidth(),
                 )
             }
         }
@@ -616,7 +636,6 @@ fun SkipiiApp() {
             PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
             null -> Unit
         }
-        optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
         player.playlistTarget?.let { video -> SaveToPlaylistSheet(player, video) }
         // Confirmations ("Added to queue") when the full player isn't showing its own.
         if (!showNowPlaying) {
@@ -627,6 +646,14 @@ fun SkipiiApp() {
                 sharedSurface(Modifier.fillMaxSize().aspectFit(player.videoAspect))
             }
         }
+        VideoHeldMenu(
+            video = optionsFor.takeIf { !showNowPlaying },
+            held = optionsHeld,
+            hazeState = hazeState,
+            player = player,
+            onOpen = player::open,
+            onDismiss = { optionsFor = null },
+        )
         } // CompositionLocalProvider
     }
 }
