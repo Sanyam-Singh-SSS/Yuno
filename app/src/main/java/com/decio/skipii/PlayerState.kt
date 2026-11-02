@@ -648,13 +648,30 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     /**
-     * App left the screen: stop fetching video and keep only audio (saves data and battery);
-     * back on screen, video resumes. Done through the player's track selection, so the
-     * video stream simply stops loading.
+     * App left the screen. While playback continues in the background, drop the video track
+     * (audio only). If the user already paused, keep video loaded so reopening the app does
+     * not re-buffer or spin up the decoder again.
      */
     fun setBackground(background: Boolean) {
         wantBackground = background
-        applyVideoTrack()
+        if (background) {
+            backgroundVideoOffJob?.cancel()
+            backgroundVideoOff = false
+            backgroundVideoOffJob = scope.launch {
+                delay(BACKGROUND_VIDEO_OFF_DELAY_MS)
+                if (!wantBackground || !isPlaying) return@launch
+                backgroundVideoOff = true
+                SharedVideoTexture.captureFrame()
+                applyVideoTrack()
+            }
+        } else {
+            backgroundVideoOffJob?.cancel()
+            backgroundVideoOffJob = null
+            val resumeVideo = backgroundVideoOff
+            backgroundVideoOff = false
+            if (resumeVideo && isPlaying) suppressBufferingForVideoResume = true
+            applyVideoTrack()
+        }
     }
 
     /**
@@ -664,10 +681,15 @@ class PlayerState(private val scope: CoroutineScope) {
      * now applied on every connect too.
      */
     private var wantBackground = false
+    /** True only after the app has been in the background long enough while playing. */
+    private var backgroundVideoOff = false
+    private var backgroundVideoOffJob: Job? = null
+    /** Hides the spinner while video turns back on after background audio-only. */
+    private var suppressBufferingForVideoResume = false
 
     /**
-     * The Shorts tab is open: the paused video gives its decoder back (Shorts keeps four of
-     * its own; with this one too the fourth failed to start on the emulator, 2026-10-28).
+     * Drops the main video track so another player can use the decoder. Shorts no longer
+     * calls this — it only pauses the main player so resume after the tab is instant.
      */
     fun setVideoAside(aside: Boolean) {
         wantAside = aside
@@ -676,12 +698,12 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private var wantAside = false
 
-    /** Video is off in the background, while Shorts is open and whenever audio only is on. */
+    /** Video off only after sustained background playback, Shorts aside, or audio-only mode. */
     private fun applyVideoTrack() {
-        val off = wantBackground || wantAside || AudioOnly.enabled
+        val off = backgroundVideoOff || wantAside || AudioOnly.enabled
         val player = controller ?: return
         if (player.trackSelectionParameters.disabledTrackTypes.contains(androidx.media3.common.C.TRACK_TYPE_VIDEO) == off) return
-        Log.i(TAG, if (off) "video off (${if (AudioOnly.enabled) "audio only" else if (wantAside) "Shorts" else "background"})" else "video on")
+        Log.i(TAG, if (off) "video off (${if (AudioOnly.enabled) "audio only" else if (wantAside) "Shorts" else "background playback"})" else "video on")
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, off)
             .build()
@@ -756,11 +778,13 @@ class PlayerState(private val scope: CoroutineScope) {
         val player = controller ?: return
         isPlaying = player.isPlaying
         // While the service refetches refused links the player sits idle; show the spinner.
-        isBuffering = player.playbackState == Player.STATE_BUFFERING || StreamRecovery.recovering == current?.id
+        isBuffering = !suppressBufferingForVideoResume &&
+            (player.playbackState == Player.STATE_BUFFERING || StreamRecovery.recovering == current?.id)
         positionMs = player.currentPosition.coerceAtLeast(0L)
         bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
         durationMs = player.duration.takeIf { it > 0 } ?: ((current?.durationSec ?: 0L) * 1000L)
         speed = player.playbackParameters.speed
+        applyVideoTrack()
     }
 
     internal val listener = object : Player.Listener {
@@ -790,6 +814,11 @@ class PlayerState(private val scope: CoroutineScope) {
             firstFrameRendered = true
             videoStale = false
             blankUntilFrame = false
+            suppressBufferingForVideoResume = false
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY) suppressBufferingForVideoResume = false
         }
 
         override fun onPlayerError(e: PlaybackException) {
@@ -878,3 +907,5 @@ fun rememberPlayerState(): PlayerState {
 enum class PlayerSheet { Quality, Speed, Chapters, Comments, Queue }
 
 private const val TAG = "Skipii"
+/** Background audio-only kicks in only after this long; quick app switches keep video loaded. */
+private const val BACKGROUND_VIDEO_OFF_DELAY_MS = 2_000L

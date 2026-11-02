@@ -349,9 +349,16 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
     )
 
     /** The tab opened: load the feed if there's none, and start playing where it was left. */
-    fun enter() {
+    fun enter(mainPlayerActive: Boolean = false) {
         if (active) return
         active = true
+        if (mainPlayerActive) {
+            // The mini-player's video decoder stays up while Shorts is open; load fewer
+            // shorts ahead so hardware decoders aren't exhausted (was: main video off).
+            maxAhead = minOf(maxAhead, 1)
+            assigned.forEach { (i, p) -> if (i > index + 1) p.unprepare() }
+            poke()
+        }
         // Players still being let go from last time carry on going in the background (none is in use).
         markShown()
         if (items.isEmpty() && !loading) refresh()

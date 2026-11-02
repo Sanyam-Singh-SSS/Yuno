@@ -230,7 +230,7 @@ fun SkipiiApp() {
         }
     }
 
-    // Off screen (app in background, screen locked): audio only.
+    // Off screen: after ~2 s of background *playback*, audio-only; quick switches keep video loaded.
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -307,11 +307,9 @@ fun SkipiiApp() {
         if (tab == Tab.Shorts) {
             resumeMain = resumeMain || player.isPlaying
             player.controller?.pause()
-            player.setVideoAside(true)
-            shorts.enter()
+            shorts.enter(mainPlayerActive = player.current != null)
         } else if (shorts.active) {
             shorts.leave()
-            player.setVideoAside(false)
             if (resumeMain) player.controller?.play()
             resumeMain = false
         }
