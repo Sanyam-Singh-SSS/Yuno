@@ -72,6 +72,13 @@ fun GlassNavBar(
         inlineAccessory = if (song != null) {
             { accessoryModifier, scope ->
                 val visible = scope.transition.targetState == EnterExitState.Visible
+                // Settled only. While the shared element is moving, a TextureView
+                // is a hole in the overlay: the fold remeasures it every frame
+                // and the scroll drops. BitChord morphs a still. The frame was
+                // captured just before this flip (see [FloatingTabBarScrollConnection.onBeforeToggle]).
+                val live = visible &&
+                    scope.transition.currentState == EnterExitState.Visible &&
+                    dock?.coversMiniArt != true
                 MiniPlayer(
                     state = player,
                     onExpand = onExpandPlayer,
@@ -80,7 +87,7 @@ fun GlassNavBar(
                     // the gesture on the outside of the glass).
                     modifier = Modifier.miniPlayerPullGestures(pull, onDismiss = player::close).then(accessoryModifier),
                     shape = pillShape,
-                    showVideo = visible && dock?.coversMiniArt != true,
+                    showVideo = live,
                     compact = true,
                     // Only the row the fold is settling on reports where the artwork lands.
                     dock = if (visible) dock else null,
@@ -92,12 +99,15 @@ fun GlassNavBar(
         expandedAccessory = if (song != null) {
             { accessoryModifier, scope ->
                 val visible = scope.transition.targetState == EnterExitState.Visible
+                val live = visible &&
+                    scope.transition.currentState == EnterExitState.Visible &&
+                    dock?.coversMiniArt != true
                 MiniPlayer(
                     state = player,
                     onExpand = onExpandPlayer,
                     modifier = Modifier.miniPlayerPullGestures(pull, onDismiss = player::close).fillMaxWidth().then(accessoryModifier),
                     shape = pillShape,
-                    showVideo = visible && dock?.coversMiniArt != true,
+                    showVideo = live,
                     dock = if (visible) dock else null,
                     pull = null,
                     gestures = false,

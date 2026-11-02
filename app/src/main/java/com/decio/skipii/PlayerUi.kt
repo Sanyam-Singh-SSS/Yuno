@@ -833,13 +833,19 @@ fun MiniPlayer(
             .height(if (compact) MiniHeightInline else MiniHeight)
             .then(if (gestures) Modifier.miniPlayerPullGestures(pull, onDismiss = state::close) else Modifier)
             .pressable(pressedScale = 0.98f, onClick = onExpand)
-            .graphicsLayer {
-                this.shape = shape
-                clip = true
-                shadowElevation = if (glassOn) 0f else 16.dp.toPx()
-                ambientShadowColor = Color.Black.copy(alpha = 0.12f)
-                spotShadowColor = Color.Black.copy(alpha = 0.18f)
-            }
+            // Liquid glass already clips, and an extra clip layer around it
+            // forces another offscreen buffer. That buffer is what the fold
+            // scales — with the video in it, the scroll stalls. The haze card
+            // still needs the shadow layer.
+            .then(
+                if (glassOn) Modifier else Modifier.graphicsLayer {
+                    this.shape = shape
+                    clip = true
+                    shadowElevation = 16.dp.toPx()
+                    ambientShadowColor = Color.Black.copy(alpha = 0.12f)
+                    spotShadowColor = Color.Black.copy(alpha = 0.18f)
+                }
+            )
             .then(surface)
     ) {
         Row(Modifier.fillMaxSize().padding(start = thumbStart, end = if (compact) 6.dp else 8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -270,15 +270,22 @@ class FloatingTabBarScrollConnection(
     var isInline by mutableStateOf(initialIsInline)
         private set
 
+    /**
+     * Runs on the UI thread immediately before [isInline] flips, while the
+     * current bar is still composed. The glass nav captures the mini player's
+     * frame here: the fold itself must not carry a live TextureView.
+     */
+    var onBeforeToggle: (() -> Unit)? = null
+
     private var accumulatedScroll = 0f
 
-    fun expand() {
-        isInline = false
-        accumulatedScroll = 0f
-    }
+    fun expand() = changeInline(false)
 
-    fun inline() {
-        isInline = true
+    fun inline() = changeInline(true)
+
+    private fun changeInline(inline: Boolean) {
+        if (isInline != inline) onBeforeToggle?.invoke()
+        isInline = inline
         accumulatedScroll = 0f
     }
 
@@ -303,12 +310,10 @@ class FloatingTabBarScrollConnection(
                 // Check if we've scrolled enough to trigger state change
                 if (accumulatedScroll <= -scrollThresholdPx && !isInline) {
                     // Scrolling down enough - transition to inline mode
-                    isInline = true
-                    accumulatedScroll = 0f // Reset after state change
+                    changeInline(true)
                 } else if (accumulatedScroll >= scrollThresholdPx && isInline) {
                     // Scrolling up enough - transition to expanded mode
-                    isInline = false
-                    accumulatedScroll = 0f // Reset after state change
+                    changeInline(false)
                 }
             }
 
@@ -316,12 +321,10 @@ class FloatingTabBarScrollConnection(
                 // Check if we've scrolled enough to trigger state change
                 if (accumulatedScroll >= scrollThresholdPx && !isInline) {
                     // Scrolling up enough - transition to inline mode
-                    isInline = true
-                    accumulatedScroll = 0f // Reset after state change
+                    changeInline(true)
                 } else if (accumulatedScroll <= -scrollThresholdPx && isInline) {
                     // Scrolling down enough - transition to expanded mode
-                    isInline = false
-                    accumulatedScroll = 0f // Reset after state change
+                    changeInline(false)
                 }
             }
 

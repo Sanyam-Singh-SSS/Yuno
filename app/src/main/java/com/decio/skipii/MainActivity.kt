@@ -351,6 +351,9 @@ fun SkipiiApp() {
 
     val hazeState = remember { HazeState() }
     val navScroll = rememberFloatingTabBarScrollConnection()
+    // Captures while the live surface is still up, so the fold scales that
+    // frame instead of the TextureView. See GlassNav.
+    SideEffect { navScroll.onBeforeToggle = { SharedVideoTexture.captureFrame() } }
     // Shorts is a vertical swipe, not a list: that swipe must not fold the glass bar.
     LaunchedEffect(tab) { if (tab == Tab.Shorts) navScroll.expand() }
     val windowBackground = c.surface
