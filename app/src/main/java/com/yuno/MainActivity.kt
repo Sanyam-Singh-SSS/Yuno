@@ -90,6 +90,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // The system fades the splash out after the first frame, so the mark
+            // stays up after the page is already drawn. Removing it is the whole
+            // exit: nothing is held, and the page shows as soon as it is ready.
+            splashScreen.setOnExitAnimationListener { it.remove() }
+        }
         // One window at a time (one player, one video texture): a newer one closes the one before.
         // That's a bubble opened while the app is open, or the app opened from Home while it sits
         // in a bubble (the bubble then goes away). Its task goes too, so Recents keeps no stale card;

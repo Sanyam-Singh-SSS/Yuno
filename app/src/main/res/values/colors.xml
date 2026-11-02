@@ -1,5 +1,7 @@
 <resources>
     <color name="brand">#D81E4A</color>
-    <color name="window_light">#FFF8F8</color>
-    <color name="window_dark">#140C0E</color>
+    <!-- Cold-start window and the system splash. Same as the page surface
+         (Theme.kt), so the first frame doesn't flash a different color. -->
+    <color name="window_light">#F7F7F9</color>
+    <color name="window_dark">#0D0D0F</color>
 </resources>

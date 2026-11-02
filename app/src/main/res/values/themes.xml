@@ -1,6 +1,13 @@
 <resources>
     <style name="Theme.Yuno" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_light</item>
+        <!-- API 31+ only reads these. The mark is its own drawable (ic_splash),
+             not the adaptive launcher icon: that one is masked into a circle and
+             its gradient background comes out as a red plate. Duration 0 so the
+             icon isn't an animation the splash waits on. -->
+        <item name="android:windowSplashScreenBackground">@color/window_light</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
 
     <!-- The player sheet is positioned by us. A dialog animation would slide
