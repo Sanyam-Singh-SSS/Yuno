@@ -14,5 +14,5 @@ dependencyResolutionManagement {
         maven("https://jitpack.io")
     }
 }
-rootProject.name = "Skipii"
+rootProject.name = "Yuno"
 include(":app")

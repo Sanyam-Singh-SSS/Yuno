@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Skipii — a YouTube player in Material 3 Expressive</title>
+<title>Yuno — a YouTube player in Material 3 Expressive</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -338,7 +338,7 @@ body.poster .cap b{font-size:26px;letter-spacing:-.5px}
 <div class="page">
   <div class="intro">
     <div>
-      <h1>Skipii: a YouTube player, not a YouTube app.</h1>
+      <h1>Yuno: a YouTube player, not a YouTube app.</h1>
       <p>Round two of the Material 3 Expressive concept, built for a no-account client (NewPipeExtractor + Media3). Playback controls now sit on the video, the Create button is gone, and everything that needed a Google account is replaced by local features: subscriptions, history, downloads, audio-only, and SponsorBlock. Tap things in the first phone; it's interactive.</p>
     </div>
     <div class="controls">
@@ -460,7 +460,7 @@ const shorts=()=>`<div class="sec"><h2>Shorts from your channels</h2></div><div 
  ${[['s1','60-second sourdough that actually rises','2.1M'],['s2','Rail grind POV at golden hour','880K'],['s3','Tiny desk, huge sound','430K'],['s4','Night-sky timelapse from 4,000 m','1.4M']].map(([a,t,v])=>`<div class="short tap">${art[a]()}<em>${v}</em><p>${t}</p></div>`).join('')}</div>`;
 
 const homeView=()=>`<div class="view">
- ${header('Skipii',`<button class="cbtn tap" aria-label="Refresh">${ic('refresh')}</button><button class="cbtn tap" aria-label="Settings">${ic('gear')}</button>`,true)}
+ ${header('Yuno',`<button class="cbtn tap" aria-label="Refresh">${ic('refresh')}</button><button class="cbtn tap" aria-label="Settings">${ic('gear')}</button>`,true)}
  ${chipRow(['All','Unwatched','Videos','Live','Podcasts','Music'])}
  <div class="hero">
   <div class="hero-top"><span class="eyebrow">CONTINUE WATCHING</span><span class="bigplay">${ic('hist')}</span></div>

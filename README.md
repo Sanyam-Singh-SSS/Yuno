@@ -1,4 +1,4 @@
-# Skipii
+# Yuno
 
 An ad-free YouTube player for Android, built in Material 3 Expressive.
 
@@ -12,7 +12,7 @@ Sponsor segments get skipped with [SponsorBlock](https://sponsor.ajay.app).
 
 ## Download
 
-**[Skipii.apk](https://github.com/deciocrytek/Skipii/releases/latest/download/Skipii.apk)**: always the
+**[Yuno.apk](https://github.com/danielkanan/Yuno/releases/latest/download/Yuno.apk)**: always the
 latest release. Open it on your phone and allow installs from your browser. Updates install over
 the previous version.
 
@@ -71,7 +71,7 @@ Judge smoothness on the **release** build; debug Compose runs unoptimized.
 ## Project layout
 
 ```
-app/src/main/java/com/decio/skipii/
+app/src/main/java/com/yuno/
   YouTube.kt          search + video details (NewPipeExtractor), stream cache and selection
   PlaybackService.kt  Media3 session service, DASH/merging media sources
   PlayerState.kt      UI-side playback state over a MediaController
@@ -92,13 +92,13 @@ CLAUDE.md             product decisions and working rules for AI-assisted develo
 - [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor): YouTube data, GPL-3.0
 - [AndroidX Media3](https://github.com/androidx/media): playback
 - [SponsorBlock](https://sponsor.ajay.app): sponsor segments, CC BY-NC-SA 4.0 (planned)
-- [essopsp](https://github.com/essopsp): the idea of a Shorts tab ([#10](https://github.com/deciocrytek/Skipii/pull/10))
+- [essopsp](https://github.com/essopsp): the idea of a Shorts tab ([#10](https://github.com/danielkanan/Yuno/pull/10))
 - [@o0ir4](https://www.threads.com/@o0ir4): reported the layout on Arabic (right-to-left) phones (0.5.64)
-- [nsk-47](https://github.com/nsk-47): found the gap under Appearance on large font sizes ([#24](https://github.com/deciocrytek/Skipii/issues/24), 0.5.65)
+- [nsk-47](https://github.com/nsk-47): found the gap under Appearance on large font sizes ([#24](https://github.com/danielkanan/Yuno/issues/24), 0.5.65)
 
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE). Required because NewPipeExtractor is GPL-3.0.
 
-Skipii is not affiliated with or endorsed by YouTube or Google. It's a personal project for
+Yuno is not affiliated with or endorsed by YouTube or Google. It's a personal project for
 sideloading, not distributed through the Play Store.

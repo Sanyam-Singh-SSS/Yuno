@@ -1,19 +1,20 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
-    namespace = "com.decio.skipii"
+    namespace = "com.yuno"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.skipii"
+        applicationId = "com.yuno"
         minSdk = 26
         targetSdk = 36
         versionCode = 74
         versionName = "0.5.65"
+        buildConfigField("String", "GITHUB_RELEASES_REPO", "\"danielkanan/Yuno\"")
     }
 
     buildTypes {
@@ -69,8 +70,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // BitChord's icon set: its custom nav/player glyphs live in-tree, and the
-    // rest of its icons are SF Symbols. Non-transitive, as BitChord takes it.
+    // Custom nav/player glyphs live in-tree ([YunoIcons]); SF Symbols for the rest.
+    // Non-transitive dependency.
     implementation("com.github.cosmictaserdev-creator.Jetpack_SF_Symbols:sfsymbols-android:1.1.1") {
         isTransitive = false
     }
@@ -86,7 +87,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.guava:guava:33.3.1-android")
-    // Backdrop frost for the liquid-glass nav (BitChord-style, Telegram-like Haze).
+    // Backdrop frost for the liquid-glass nav (Telegram-like Haze).
     implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
 

@@ -1,9 +1,9 @@
-# Skipii — working rules for Claude Code
+# Yuno — working rules for Claude Code
 
 Native Android YouTube **player** (not a YouTube app): Kotlin, Jetpack Compose, Media3,
 NewPipeExtractor. Optional Google sign-in with full sync, no ads, sideloaded. Single user (Derek), Pixel.
-Design source of truth: `~/decio/castii/docs/DESIGN_LANGUAGE.md` (Material 3 Expressive,
-motion standard) and the approved mockup `docs/design/mockup.html` (open in a browser; earlier rounds in `docs/design/`).
+Design source of truth: Material 3 Expressive motion standard and the approved mockup
+`docs/design/mockup.html` (open in a browser; earlier rounds in `docs/design/`).
 
 ## Binding product decisions
 - Pure player: no upload/Create button. Tabs: Home / Subscriptions / Shorts / Search / Library (Shorts since 0.5.50).
@@ -24,9 +24,9 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
 - No minimize button on the player (swipe down / Back). Tab bar = Castii's NavPill, but the
   selected tab uses full `primary` / `onPrimary` for contrast (not primaryContainer).
 - Queue: playlist is always [current, ...queue]; long-press any video → Play next / Add to queue.
-  The hold lifts that video the way BitChord's held menu does: the page blurs, the video sits on a
+  The hold lifts that video the way the held menu does: the page blurs, the video sits on a
   plate, and the actions hang under it (`VideoHeldMenu`).
-- 0.5.0 (2026-10-05): YouTube theme (`SEED_YOUTUBE`, Skipii's own, listed first); YouTube-style
+- 0.5.0 (2026-10-05): YouTube theme (`SEED_YOUTUBE`, Yuno's own, listed first); YouTube-style
   launcher icon (red rounded rect + double play, white background baked in, cut-out monochrome).
   Resume: `ResumeStore` (positions written by the service's `ResumeSaver`, read on open, thin
   bars on thumbnails). Background = audio only (video track disabled on ON_STOP, back on
@@ -51,7 +51,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   Radius = 0; shadow only mid-morph). Top vignette halved and softened (now `vignetteBrush` mirrored: 76% → 0, smoothstep). "YouTube
   refused the stream" = HTTP 403 on a stale/other-network stream URL: `PlayerState.recoverStream`
   re-extracts once per video and resumes at the same position; `StreamCache.invalidateAll()` on
-  any default-network change. Errors log "playback error … (HTTP nnn)" under tag Skipii.
+  any default-network change. Errors log "playback error … (HTTP nnn)" under tag Yuno.
 - 0.5.16: that recovery moved into the service (`StreamRecoverer` in PlaybackService.kt; works with
   no UI, e.g. background audio). Mobile data changes the phone's address mid-video without a
   network change, so a 403 can repeat: it recovers again once ≥30 s more has played; refused again
@@ -60,7 +60,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   invalidates the cached links (it used to replay the exact refused URLs).
 - 0.5.16 bot check ("Sign in to confirm you're not a bot", seen on Derek's 5G): YouTube refuses the
   extractor's ANDROID reel request per address AND per client. ANDROID's formats are SABR-only (no
-  URLs) — it only supplies details; every stream Skipii plays comes from the extractor's own VISIONOS
+  URLs) — it only supplies details; every stream Yuno plays comes from the extractor's own VISIONOS
   request. `PlayerFallback` (hooked in `NewPipeDownloader`) answers a refused reel request with a
   VISIONOS answer minus its URLs, so streams still come from that same request. Do NOT hand the
   extractor VISIONOS URLs in the ANDROID slot: they 403'd on the first deep seek (3 of 4 videos);
@@ -71,7 +71,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   (`channelVideos`, anonymous when signed out via `postAny`) because NewPipe drops the badge.
   Background audio-only state is remembered (`wantBackground`) and re-applied on every
   controller connect — a screen rebuilt while backgrounded used to leave video off forever.
-  ONE video TextureView for the app (`LocalVideoSurface`, movableContentOf in SkipiiApp),
+  ONE video TextureView for the app (`LocalVideoSurface`, movableContentOf in YunoApp),
   moved between player / fullscreen / mini-player, never recreated — a new empty view at the
   handoff showed the thumbnail (minimize flicker). Mini takes the video only once the morph has
   finished (`progress.isRunning`); closing settles critically damped.
@@ -172,7 +172,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   duration) on every playlist change; closing the mini-player empties the playlist and so clears it. On a
   fresh service `PlayerState.restoreSession` sets the items paused at the `ResumeStore` position and does NOT
   prepare (nothing downloads until play; `togglePlay`/`playFromQueue` prepare an idle player). The queue
-  card has its own Clear pill (the sheet's Clear stays). Verified on the release build on skipii_qa.
+  card has its own Clear pill (the sheet's Clear stays). Verified on the release build on yuno_qa.
 - 0.5.26: clearing the queue animates (Sheets.kt `SlideAway`, `Motion.Exit` = emphasized accelerate). The card
   slides off to the right (300 ms) then its height closes (`QueueCloseSpec`, critically damped); the sheet's
   rows slide out staggered 40 ms top-down, then the list's height lerps to the empty state's. The queue is
@@ -213,14 +213,14 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   that lags the narrowing. Player `bottomClearance` and the comments step-down include `PlayerBarRaise`. Burst bubble
   sits 10 dp above the lifted bar.
 - 0.5.33 bubbles (2026-10-25, Derek's recording 6410.mp4 in Launchii): MainActivity is `singleTop`, NOT singleTask.
-  singleTask gave a bubble the app's one task: on the phone, tapping Skipii's Home icon while it was bubbled pulled
-  that task full screen and left the bubble blank; on the emulator, bubbling a running Skipii got the task killed by
+  singleTask gave a bubble the app's one task: on the phone, tapping Yuno's Home icon while it was bubbled pulled
+  that task full screen and left the bubble blank; on the emulator, bubbling a running Yuno got the task killed by
   System UI. Now a bubble gets its own task, and the app keeps ONE window itself: a new MainActivity
-  `finishAndRemoveTask()`s the previous one (`MainActivity.current`), so bubbling moves Skipii into the bubble and
+  `finishAndRemoveTask()`s the previous one (`MainActivity.current`), so bubbling moves Yuno into the bubble and
   opening it from Home closes the bubble. Playback carries on: `PlaybackService.onTaskRemoved` only pauses + stops
   when the open window's task (`MainActivity.openTaskId`) is gone from `appTasks` (a real swipe from Recents or a
   dismissed bubble); logs "an older window's task was removed … playing on". The new window starts on Home with the
-  mini-player (page state isn't carried over). Verified on skipii_qa release build; not yet on the phone.
+  mini-player (page state isn't carried over). Verified on yuno_qa release build; not yet on the phone.
 - 0.5.34 everything in the bar (2026-10-25, Derek picked "A · Key" in `docs/design/player-bar-bloom.html`, v2: speed
   and audio only stay in the action row): bar = −10 · play · +10 · ⋮ (322×72, `CompactBarWidth`). `PlayerBarState`
   (PlayerBar.kt) holds three 0…1 Animatables — `tools` (dome 380×252, four tools on an arc: Quality, PiP,
@@ -355,7 +355,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   load more"): RAM can't outlive the app, so the next 10 unseen shorts are kept WHOLE ON DISK (SimpleCache in
   cacheDir/shorts-bank, NoOpCacheEvictor; index + manifests + details in filesDir/shorts_bank.json, with the feed's next
   token). Every Shorts player reads through that cache (DASH manifests whose stream URLs are the cache keys), so a banked
-  short plays with no request at all. `ShortsState` is one per process (`SkipiiApplication.shorts`, MainScope; the shell
+  short plays with no request at all. `ShortsState` is one per process (`YunoApplication.shorts`, MainScope; the shell
   calls leave() on dispose) and `fillBank()` runs every 1.5 s from 3 s after start: downloads the next unseen short in 1 MB
   ranged pieces, one at a time, only while the connection is free (on Shorts: on-screen short started + previews loaded;
   elsewhere: the app's video isn't buffering, `mainBusy`). Seen = forgotten once its player holds it; bytes no player holds
@@ -384,16 +384,16 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   (a parent's Main pass) and closed the card on touch-down before a row's click; now it's a layer BEHIND the card (a hit
   sibling stops the ones below) and the card swallows its own touches. Test menus with a tap ~0.5 s after opening.
 - 0.5.55 self-update (2026-10-29, Derek; GitHub issue #13): `AppUpdate` (Updater.kt) asks the GitHub API for the latest
-  release at most once a day (each window start; a failed check retries after 1 h). If its Skipii.apk is newer than
+  release at most once a day (each window start; a failed check retries after 1 h). If its Yuno.apk is newer than
   `BuildConfig.VERSION_NAME`, Home's header shows an Update pill left of the profile picture (`UpdateAction`); otherwise
   nothing. On an unmetered network the APK is fetched ahead. Tap = download (fill + %, size and the asset's sha256
   `digest` checked) → PackageInstaller session (`USER_ACTION_NOT_REQUIRED` on 12+). Not yet allowed to install apps →
   Android's "Install unknown apps" page, and the install carries on on return (`onWindowResumed`). The first update from
-  a Drive/Files install asks once; after that Skipii is the installer of record and updates silently: the app just
-  closes, and `UpdateReceiver` (MY_PACKAGE_REPLACED) posts "Skipii updated to X · Tap to open" (not when Android's
+  a Drive/Files install asks once; after that Yuno is the installer of record and updates silently: the app just
+  closes, and `UpdateReceiver` (MY_PACKAGE_REPLACED) posts "Yuno updated to X · Tap to open" (not when Android's
   own dialog was shown, which offers Open). Releases MUST go through scripts/publish-apk.sh (tag v<versionName>, asset
-  Skipii.apk, signed with this Mac's debug key; another key = INSTALL_FAILED_UPDATE_INCOMPATIBLE). Logs "update check: …"
-  / "update: …". Tested on skipii_qa: a 0.5.0 build found v0.5.54 and installed it silently (adb-installed, so no
+  Yuno.apk, signed with this Mac's debug key; another key = INSTALL_FAILED_UPDATE_INCOMPATIBLE). Logs "update check: …"
+  / "update: …". Tested on yuno_qa: a 0.5.0 build found v0.5.54 and installed it silently (adb-installed, so no
   prompt); notification via a seeded `installing` pref + reinstall; Retry via a fake 9.9.9 release (downgrade refused).
 - 0.5.56 (2026-10-29, Derek, from GitHub issues): Shorts can be turned off (#21): `ShortsSetting` (Shorts.kt, prefs
   "playback"), a card in the account sheet above SponsorBlock. Off = no Shorts tab (NavPill shows four, selected weight 2.2
@@ -441,16 +441,16 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   formatDuration/formatCount; the default locale gave "١,٢M"). Lines joined with " · " use `joinDots` (each part a bidi
   isolate: an Arabic channel name pulled the next "2.4" into its run, "2.4 قرآن كريم M views"). ONE exception Derek allowed
   once it was confirmed as the norm (Android's own Settings in Arabic): settings switches (`SettingSwitchRow`, Sheets.kt) sit
-  LEFT of their words on an RTL-language phone (`rememberRtlLanguage`, from the locale) and are the mirrored switch. Test: `adb shell cmd locale set-app-locales com.skipii
+  LEFT of their words on an RTL-language phone (`rememberRtlLanguage`, from the locale) and are the mirrored switch. Test: `adb shell cmd locale set-app-locales com.yuno
   --locales ar-EG` (back: `en-US`).
 - 0.5.65 (2026-10-30, GitHub #24): a tall empty gap under Appearance's mode chips on a big font / display size. The chips sat
   in a plain Row: the last one (AMOLED) got only its padding's width and its label wrapped a letter a line. The row now
   scrolls like the SponsorBlock and theme rows, labels one line. Any row of chips scrolls (or wraps) — never a bare Row.
   Test: `adb shell settings put system font_scale 1.3` + `adb shell wm density 500` (back: 1.0 / `wm density reset`).
-- Colors are BitChord's (2026-11-01): one dark scheme and one light scheme, no wallpaper
+- Colors (2026-11-01): one dark scheme and one light scheme, no wallpaper
   colors and no named palettes. Appearance is System / Light / Dark (`ThemeSettings.mode`,
-  persisted; an older AMOLED choice reads as Dark). The named roles match BitChord's Theme.kt
-  (white on black, black on white); container steps are those same grays. Tab bar is 62 dp (Derek; tabs keep 50 dp targets); the page has Ledgii's bottom vignette
+  persisted; an older AMOLED choice reads as Dark). The named roles are white on black,
+  black on white; container steps are those same grays. Tab bar is 62 dp (Derek; tabs keep 50 dp targets); the page has Ledgii's bottom vignette
   (130 dp + system bar, page color 0 → 76% on a smoothstep ramp so its top edge is invisible; `vignetteBrush`, shared with the top vignette) under the mini-player and tab bar.
 
 ## Binding UI rules (inherited from Castii)
@@ -469,7 +469,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
    item — a keyed loader at index 0 makes LazyColumn land at the bottom when items arrive.
 9. `Modifier.pressable(enabled = false)` attaches no click handler, so taps fall through (hidden
    video controls must not swallow the tap that reveals them).
-10. Text color comes from `LocalContentColor` set in `SkipiiTheme`; never rely on Compose's black default.
+10. Text color comes from `LocalContentColor` set in `YunoTheme`; never rely on Compose's black default.
 11. Root-cause fixes only; `runCatching` around a side effect needs a fallback/state change.
 
 ## Build & verify
@@ -477,13 +477,13 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
 - `./gradlew assembleDebug` before presenting any change; fix compiler output first.
 - `./gradlew testDebugUnitTest` runs the InnerTube parser tests.
 - The default emulator (emulator-5554) is shared with other sessions that send their own taps/Back/Home.
-  For uninterrupted checks use the `skipii_qa` AVD: `emulator -avd skipii_qa -port 5560 -no-window`.
+  For uninterrupted checks use the `yuno_qa` AVD: `emulator -avd yuno_qa -port 5560 -no-window`.
 - Emulator note: it has "stay awake while charging" on; turn off `stay_on_while_plugged_in` before
   testing anything about screen timeout.
 - Judge feel on `./gradlew assembleRelease` (R8). **Verify playback on the RELEASE build before
   shipping** — Derek installs release APKs. R8 once emptied NewPipeExtractor's audio streams in
   release only (360p fallback under a "1080p" label); the extractor is now kept whole in
-  proguard-rules.pro. Check `adb logcat -s Skipii:I | grep "media source"` (should say
+  proguard-rules.pro. Check `adb logcat -s Yuno:I | grep "media source"` (should say
   "video itag … + audio itag …", never "combined fallback") and the quality sheet's "Playing …" line. Release is signed with the debug key,
   so it installs over debug builds.
 - Double taps can't be driven with `adb shell input tap` (each call takes ~0.3 s). Use `adb root` and
@@ -494,7 +494,7 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
   screenshot with `adb exec-out screencap -p`. Check playback via
   `adb shell dumpsys media_session | grep PlaybackState`.
 
-## Map (`app/src/main/java/com/decio/skipii/`)
+## Map (`app/src/main/java/com/yuno/`)
 - `YouTube.kt` — models, search/details via NewPipeExtractor, `StreamCache` (shared by UI
   and service), `StreamSelection` (≤1080p, H.264 first, original audio track).
 - `PlaybackService.kt` — MediaSessionService + ExoPlayer; resolves video IDs in
@@ -567,5 +567,5 @@ motion standard) and the approved mockup `docs/design/mockup.html` (open in a br
    after details (their request duplicated the critical-path `next`); video-server connection
    pre-warmed (`Net.prewarmMediaConnection`); NewPipe iOS client off. Screen stays on while
    playing (`keepScreenOn` from isPlaying); player wake mode NETWORK.
-   Measure with `adb logcat -s SkipiiTime:I` (open → details → first frame → quality changes).
+   Measure with `adb logcat -s YunoTime:I` (open → details → first frame → quality changes).
 7. Downloads, audio-only mode, captions.

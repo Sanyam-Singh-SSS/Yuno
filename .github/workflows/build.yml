@@ -19,5 +19,5 @@ jobs:
         run: ./gradlew assembleDebug assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
         with:
-          name: skipii-apks
+          name: Yuno-apks
           path: app/build/outputs/apk/**/*.apk
