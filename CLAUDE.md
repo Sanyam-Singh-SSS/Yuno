@@ -2,8 +2,7 @@
 
 Native Android YouTube **player** (not a YouTube app): Kotlin, Jetpack Compose, Media3,
 NewPipeExtractor. Optional Google sign-in with full sync, no ads, sideloaded. Single user (Derek), Pixel.
-Design source of truth: Material 3 Expressive motion standard and the approved mockup
-`docs/design/mockup.html` (open in a browser; earlier rounds in `docs/design/`).
+Design source of truth: the shipping app UI (Material 3 Expressive motion). Reference screenshots: `docs/screens/`.
 
 ## Binding product decisions
 - Pure player: no upload/Create button. Tabs: Home / Subscriptions / Shorts / Search / Library (Shorts since 0.5.50).
@@ -103,7 +102,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   (Choreographer expected-present vs the release stamp + 80% vsync, median of 61) and
   `SyncedVideoRenderer` shifts the video renderer's position by it. Logs "AV sync: frames show …".
   Audio/Bluetooth latency stays ExoPlayer's job. API 33+ only (no expected-present below).
-- 0.5.14–0.5.15 double-tap seek (2026-10-09, Derek picked mockup B in `docs/design/double-tap-seek.html`, minus
+- 0.5.14–0.5.15 double-tap seek (2026-10-09, Derek picked option B, minus
   its landing-time label): left/right 40% of the video (portrait + fullscreen, never the mini-player);
   a double tap starts a burst of -/+10 s, every further tap on that side within 600 ms adds 10 s
   (`SeekBurstWindowMs`). `SeekBurstPill` (VideoView.kt): glass pill at 22%/78%, rewind/fast-forward
@@ -139,7 +138,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   dragging, fullscreen scrub hidden until controls or a drag); ultrawide streams label by tier (1080p) not raw
   pixel height (`StreamSelection` / quality pill); channel + subscriptions metadata/UX polish; library/card/channel
   thumbnail corner radius aligned.
-- 0.5.20 (2026-10-13, Derek approved mockup "Option B v2" in Drive): speed + audio-only buttons after
+- 0.5.20 (2026-10-13, Derek approved option B v2): speed + audio-only buttons after
   Save (separate, 16 dp corners; signed out they're the whole row). Speed (`PlaybackSpeed`, PlaybackModes.kt):
   0.5–3× in 0.05 steps from a flickable ruler (`SpeedPanel.kt`, 12 dp per step, momentum then settles on a
   step, tap jumps, 1× reset); per video unless "Remember for every video", then saved, button filled in, and
@@ -178,7 +177,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   rows slide out staggered 40 ms top-down, then the list's height lerps to the empty state's. The queue is
   cleared at once; the UI animates a snapshot. Timing runs on the animation clock (`sweep`), never `delay()` —
   a delay isn't scaled with animator speed and the close started early in slow-motion checks.
-- 0.5.27 player bar (2026-10-19, Derek picked mockup A in `docs/design/player-bar.html` minus its next button and
+- 0.5.27 player bar (2026-10-19, Derek picked option A minus its next button and
   time label): while the player is open the tab bar IS the player's bar (`NavPill`, NavBar.kt, drawn over
   `PlayerScreen`): −10 · play · +10, compact (0.5.28: play pill 96 dp ≈ 60% of the first 161, ±10 slots 50 dp,
   bar narrows 328 → 216 dp around its centre; tabs keep full width under it while fading). Driven by `morph.progress` in layer/draw lambdas only (a swipe down scrubs it
@@ -206,7 +205,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   The portrait stage stays within 60% of the window's height (`StageMaxHeightShare` → `PlayerState.stageFloor`,
   set from the window in MainActivity; tall videos pillarbox) so a short pane keeps the details. Test on the
   emulator: hold-swipe into Recents → app icon → Split screen; drag the divider (adb `input motionevent`).
-- 0.5.32 player bar reach (2026-10-25, Derek picked mockup A "Lift" in `docs/design/player-bar-reach.html`): the open
+- 0.5.32 player bar reach (2026-10-25, Derek picked "Lift"): the open
   player's bar is a size up and lifted toward the thumb — 264×72 (`PlayerBarHeight`), play 120×60, ±10 60, icons 30 dp,
   its bottom `PlayerBarLift` 36 dp above the tab bar's. The tab bar's slot never moves: the bar grows upward in its
   `layout` and lifts by a graphicsLayer translation (touches follow) on a back-out ramp (p 0.22–0.92, small overshoot)
@@ -221,7 +220,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   when the open window's task (`MainActivity.openTaskId`) is gone from `appTasks` (a real swipe from Recents or a
   dismissed bubble); logs "an older window's task was removed … playing on". The new window starts on Home with the
   mini-player (page state isn't carried over). Verified on yuno_qa release build; not yet on the phone.
-- 0.5.34 everything in the bar (2026-10-25, Derek picked "A · Key" in `docs/design/player-bar-bloom.html`, v2: speed
+- 0.5.34 everything in the bar (2026-10-25, Derek picked "A · Key", v2: speed
   and audio only stay in the action row): bar = −10 · play · +10 · ⋮ (322×72, `CompactBarWidth`). `PlayerBarState`
   (PlayerBar.kt) holds three 0…1 Animatables — `tools` (dome 380×252, four tools on an arc: Quality, PiP,
   Fullscreen, Next), `list` (quality list in the bar, Auto + every height, check lands then folds after 420 ms) and
@@ -251,7 +250,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   Audio only has NO video space on the open player: `VideoStage`'s `fold` (spring, critically damped) closes the
   stage's layout height to 0 (picture fading + lifting, clipped while folding), scaled by `ramp(progress, 0.8)` so a
   swipe down unfolds it again and the thumbnail still lands in the mini-player. Swipe the details to minimize then.
-- 0.5.37 progress (2026-10-25, Derek picked A "Inside" in `docs/design/player-bar-progress.html`): bar 10% taller —
+- 0.5.37 progress (2026-10-25, Derek picked "Inside"): bar 10% taller —
   row `PlayerRowHeight` 67 + `PlayerProgressRoom` 8 = `PlayerBarHeight` 75 (316×75 at rest). `BarProgress` (PlayerBar.kt)
   draws a 3 dp hairline under the row (row width − 20 dp each side, 5 dp from the bottom): chapters as slits, SponsorBlock
   marks in their colours, fill from `rememberPlayedFraction`. Scrubbing swells THAT line into the 348×40 chapter track
@@ -259,7 +258,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   Dome 262 tall, arc centre 80 dp up, so tools clear the taller row.
 - 0.5.38 (Derek): 8 dp `PlayerTopRoom` above the row so the buttons have as much room above (8 + 5 inset) as below
   (5 inset + 8 hairline room): bar 316×83. Hairline 10% smaller: 248×2.7 (inset 34). Dome 270, arc centre 88 up.
-- 0.5.39 (2026-10-25, Derek picked A "Card" in `docs/design/player-bar-row.html`): the dome is gone. The ⋮ key / hold /
+- 0.5.39 (2026-10-25, Derek picked "Card"): the dome is gone. The ⋮ key / hold /
   swipe up opens a short rounded card (`CardWidth` 380, `CardHeight` 160 above the resting bar's bottom, 32 dp corners)
   with the tools as 58 dp circles in ONE straight row (`rowSpot`: evenly across 348 dp, centred 113 dp up; pop in left
   to right). The card also reaches `CardBelow` 24 dp under the resting bar (`playerBarBelow`; NavPill places the bar
@@ -329,7 +328,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   after next)". Leaving releases the players (feed and spot kept); background pauses (`setForeground`). 403 → fresh links once.
   Signed in: like / subscribe (`InnerTube.videoState`), history start ping only (no watch-time pings). Tap = pause (own tap
   detector: detectTapGestures took the down and a quick flick came out as a pause).
-  The bar (Derek's mockup, iterated 2026-10-28): the tab bar turns into ‹ + a pill of dark frosted glass along ONE progress
+  The bar (2026-10-28, Derek): the tab bar turns into ‹ + a pill of dark frosted glass along ONE progress
   (`shortsMorph`, 620 ms linear in, 460 ms `ShortsExitEasing` out, everything moving from the first frame — the first cut
   waited ~300 ms on the tab glide and felt slow). NavPill: `shortsTabDrop` / `shortsHomeFade` / `shortsBarFade`, tabs off
   while shown. `ShortsBar`: ‹ 50 + gap 8 + pill 236, 50 dp tall, centred, bottom = tab bar's bottom; pill = Like ·
@@ -337,7 +336,7 @@ Design source of truth: Material 3 Expressive motion standard and the approved m
   was opened from (`shortsFrom`). Glass = One UI Launcher's recipe on the live frame: each page's frame sampled 40 px wide
   (TextureView.getBitmap, ≤30/s while under the bar, once for a waiting short), 3×2 box blur, saturation 1.25 + Samsung curve
   (15–255 → 53.5–232) as a ColorFilter, under #252525 at 38% (Derek: dark, more transparent); per page so mid-swipe each short
-  shows through its own half. No outline (rule 7). Icons are the mockup's own paths, centred by VISUAL MASS (silhouette
+  shows through its own half. No outline (rule 7). Icons use custom paths, centred by VISUAL MASS (silhouette
   centroid, `Mass`; Derek: box-centred "doesn't look centered"); the comment bubble only halfway, the avatar as drawn.
   Progress = 2.5 dp line on the screen's bottom edge (out of the pill: it weighed the pill down). Video full-bleed under both
   system bars (`StatusBarOverVideo.shorts`: white icons on both), the page vignette hidden. Comments = `CommentsPanel` from

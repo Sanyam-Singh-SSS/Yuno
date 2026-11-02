@@ -1,104 +1,134 @@
-# Yuno
+<div align="center">
 
-An ad-free YouTube player for Android, built in Material 3 Expressive.
+<br/>
+<br/>
 
-No ads. Use it signed out, or sign in with Google to get your own recommendations,
-subscriptions, history and playlists, with likes, subscribes and watch history syncing back.
-Sponsor segments get skipped with [SponsorBlock](https://sponsor.ajay.app).
+<img src="app/src/main/res/drawable-nodpi/wordmark.png" alt="Yuno" width="240" />
 
-| Home | Search | Shorts |
-|---|---|---|
-| ![Home](docs/screens/home.jpg) | ![Search](docs/screens/search.jpg) | ![Shorts](docs/screens/shorts.jpg) |
+<hr />
 
-## Download
+### An ad-free YouTube player for Android
 
-**[Yuno.apk](https://github.com/danielkanan/Yuno/releases/latest/download/Yuno.apk)**: always the
-latest release. Open it on your phone and allow installs from your browser. Updates install over
-the previous version.
+<br/>
 
-Publishing a new build (same link): bump `versionName`/`versionCode` in `app/build.gradle.kts`, then
-run `scripts/publish-apk.sh`.
+[![Latest release](https://img.shields.io/github/v/release/danielkanan/Yuno?style=for-the-badge&labelColor=0d1117)](https://github.com/danielkanan/Yuno/releases)
+[![License](https://img.shields.io/github/license/danielkanan/Yuno?style=for-the-badge&labelColor=0d1117)](https://github.com/danielkanan/Yuno/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/danielkanan/Yuno/total?style=for-the-badge&labelColor=0d1117)](https://github.com/danielkanan/Yuno/releases)
 
-## Features
+<br/>
 
-- **Search** YouTube with no sign-in.
-- **Playback** up to 1080p, with video and audio fetched as separate streams through
-  generated DASH manifests (avoids YouTube's throttling).
-- **Player controls on the video:** skip ±10 s, a play/pause button that changes shape, a
-  draggable scrubber, and controls that auto-hide.
-- **Mini-player** that morphs into the player: the video grows out of the thumbnail. Swipe the
-  player down to minimize it (it follows your finger) or swipe the mini-player up to expand.
-- **Background audio** with a media notification; the mini-player shows the live video.
-- **Queue:** press and hold any video for Play next / Add to queue.
-- **Shorts:** a full-screen vertical feed (yours when signed in, a general one otherwise). Swipe
-  between shorts, tap to pause; the tab bar turns into a frosted-glass bar with Like, Comments,
-  Share and the channel (tap to subscribe). The next 10 unseen shorts are kept downloaded (about
-  100–150 MB of cache), so they start instantly even right after the app opens; each one is
-  forgotten once seen and the next is fetched in the background. Your regular video pauses and
-  comes back when you leave.
-- **SponsorBlock:** per category, Skip (with an audio fade and Undo), Ask (a Skip button), Show on the
-  scrubber, or Off. Settings are in the account sheet.
-- **Comments** with replies, a **quality picker** (Auto or any height YouTube offers, remembered),
-  and **landscape fullscreen** by rotating the phone or tapping the fullscreen button.
-- **Google sign-in (optional):** Home recommendations, subscriptions feed, history, Watch later,
-  liked videos and playlists. Likes, subscribes, Save and watch history sync to your account.
-  The session is stored encrypted with an Android Keystore key. Note: Google can suspend
-  accounts used with unofficial clients; a secondary account avoids risking your main one.
-- **Wallpaper colors** (Material You), Ledgii-style floating nav capsule, and no tap ripple.
+[**Download**](#download) · [**Features**](#features) · [**Building**](#building) · [**Disclaimer**](#disclaimer)
 
-## Roadmap
+<br/>
 
-1. ✅ Shell, search, playback, overlay controls, mini-player, background audio
-2. ✅ Mini-player ↔ player morph; swipe down to minimize, swipe up to expand
-3. ✅ Comments, quality picker, landscape fullscreen
-4. ✅ Google sign-in with full sync
-5. ✅ Queue, comment posting, SponsorBlock, Castii-style tab bar
-6. ✅ Shorts tab
-7. Downloads, captions
+</div>
 
-## Building
+> [!IMPORTANT]
+> Yuno is not affiliated with, endorsed by, or connected to YouTube or Google in any way. Use it at your own discretion.
 
-Requirements: Android SDK (compileSdk 36) and JDK 17+. Android Studio's bundled JDK works:
+---
+
+<div align="center">
+
+<table width="100%">
+  <tr>
+    <td width="33%"><img src="docs/screens/home.jpg" alt="Home" width="100%" /></td>
+    <td width="33%"><img src="docs/screens/search.jpg" alt="Search" width="100%" /></td>
+    <td width="33%"><img src="docs/screens/shorts.jpg" alt="Shorts" width="100%" /></td>
+  </tr>
+</table>
+
+<h1><a id="features"></a>Features</h1>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+
+#### Playback
+- **Search and play** YouTube with no sign-in required.
+- **Up to 1080p** — video and audio as separate streams, merged through generated DASH manifests (avoids YouTube throttling).
+- **Player controls on the video:** ±10 s skip, draggable scrubber, chapters and SponsorBlock marks, quality and captions; controls auto-hide after 2 s.
+- **Mini-player morph** — swipe the player down to minimize (it follows your finger) or swipe the mini-player up to expand; live video in the mini-player.
+- **Background audio** with a media notification.
+- **Queue** — long-press any video for Play next / Add to queue.
+- **Playback speed** (0.5×–3×, optional “remember for every video”) and **audio-only** mode.
+- **SponsorBlock** — per category Skip / Ask / Show / Off, with audio-fade skips and Undo.
+
+#### Player bar
+- While a video is open, the tab bar becomes the **player bar** (−10 · play · +10 · tools): quality, PiP, fullscreen, speed, chapters, and scrub with storyboard preview.
+
+    </td>
+    <td width="50%" valign="top">
+
+#### Shorts & feeds
+- **Shorts tab** — vertical feed (personalized when signed in). Frosted-glass bar with Like, Comments, Share, and channel subscribe.
+- **Shorts bank** — the next 10 unseen shorts are cached on disk (~100–150 MB) so they start instantly; seen shorts are forgotten and refilled in the background.
+- **Home & Subscriptions** when signed in; **Library** for history, playlists, Watch later, and liked videos.
+
+#### Account & community
+- **Optional Google sign-in** — full sync: recommendations, subscriptions, history, likes, subscribes, Save, Watch later, watch history, and **comment/reply posting**.
+- Session cookies stored **AES-GCM encrypted** (Android Keystore).
+- **Comments** with avatars, replies, and likes (signed in).
+- **Self-update** from GitHub releases when a newer APK is published.
+
+    </td>
+  </tr>
+</table>
+
+</div>
+
+---
+
+<div align="center">
+
+<h1><a id="download"></a>Download</h1>
+
+**[Yuno.apk](https://github.com/danielkanan/Yuno/releases/latest/download/Yuno.apk)** — latest release. Open it on your phone and allow installs from your browser; updates install over the previous build.
+
+Publishing: bump `versionName` / `versionCode` in `app/build.gradle.kts`, then run `scripts/publish-apk.sh`.
+
+</div>
+
+---
+
+<div align="center">
+
+<h1><a id="building"></a>Building</h1>
+
+Android SDK (compileSdk 36) and JDK 17+. Android Studio’s bundled JDK works:
 
 ```sh
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew assembleDebug      # app/build/outputs/apk/debug/app-debug.apk
-./gradlew assembleRelease    # shrunk with R8, signed with the debug key
+./gradlew assembleRelease    # R8-shrunk, debug-signed — judge feel on this build
+./gradlew testDebugUnitTest  # InnerTube / parser tests
 ```
 
-Judge smoothness on the **release** build; debug Compose runs unoptimized.
+Key paths: `app/src/main/java/com/yuno/` (player, feeds, Shorts, service). Product notes for contributors: [`CLAUDE.md`](CLAUDE.md).
 
-## Project layout
+</div>
 
-```
-app/src/main/java/com/yuno/
-  YouTube.kt          search + video details (NewPipeExtractor), stream cache and selection
-  PlaybackService.kt  Media3 session service, DASH/merging media sources
-  PlayerState.kt      UI-side playback state over a MediaController
-  PlayerUi.kt         watch screen, overlay controls, scrubber, mini-player
-  MainActivity.kt     app shell: tabs, floating nav capsule, player sheet
-  Screens.kt          Home, Subscriptions, Search, Library
-  Shorts.kt           Shorts tab: feed, preloading player pool, frosted-glass bar
-  UiKit.kt            shared components and expressive shapes
-  Theme.kt, Motion.kt, Net.kt
-docs/
-  design/             approved mockup (open mockup.html in a browser) and iterations
-  screens/            screenshots of the running app
-CLAUDE.md             product decisions and working rules for AI-assisted development
-```
+---
 
-## Credits
+<div align="center">
 
-- [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor): YouTube data, GPL-3.0
-- [AndroidX Media3](https://github.com/androidx/media): playback
-- [SponsorBlock](https://sponsor.ajay.app): sponsor segments, CC BY-NC-SA 4.0 (planned)
-- [essopsp](https://github.com/essopsp): the idea of a Shorts tab ([#10](https://github.com/danielkanan/Yuno/pull/10))
-- [@o0ir4](https://www.threads.com/@o0ir4): reported the layout on Arabic (right-to-left) phones (0.5.64)
-- [nsk-47](https://github.com/nsk-47): found the gap under Appearance on large font sizes ([#24](https://github.com/danielkanan/Yuno/issues/24), 0.5.65)
+<h1><a id="disclaimer"></a>Disclaimer</h1>
 
-## License
+Yuno is an independent, sideloaded **YouTube player**. It is **not** associated with Google LLC, YouTube, or any of their services. It is not distributed through the Play Store.
 
-GPL-3.0. See [LICENSE](LICENSE). Required because NewPipeExtractor is GPL-3.0.
+* **No hosting:** Yuno does not host videos; it plays streams from YouTube via [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor).
+* **Your responsibility:** Use aligns with YouTube’s Terms of Service and your local laws. Google may suspend accounts used with unofficial clients.
+* **SponsorBlock** data is CC BY-NC-SA 4.0 ([SponsorBlock](https://sponsor.ajay.app)); non-commercial use only.
+* **Copyleft:** GPL-3.0 (required by NewPipeExtractor). See [LICENSE](LICENSE).
 
-Yuno is not affiliated with or endorsed by YouTube or Google. It's a personal project for
-sideloading, not distributed through the Play Store.
+</div>
+
+---
+
+<div align="center">
+
+<h1><a id="license"></a>License</h1>
+
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See [LICENSE](LICENSE).
+
+</div>

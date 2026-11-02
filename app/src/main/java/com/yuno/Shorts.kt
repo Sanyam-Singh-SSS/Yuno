@@ -1367,7 +1367,7 @@ private fun ShortsProblem(message: String, onRetry: () -> Unit) {
 // ── The glass bar ───────────────────────────────────────────────────────────
 
 /**
- * The tab bar's Shorts form (Derek's mockup, 2026-10-28): it splits into ‹ and a pill of dark
+ * The tab bar's Shorts form (2026-10-28): it splits into ‹ and a pill of dark
  * frosted glass, both shrinking to 50 dp, while the tabs drop out (NavPill) and the buttons pop
  * in. All of it follows one [progress] (0 tabs, 1 glass), read in draw and layer lambdas only.
  *
@@ -1718,7 +1718,7 @@ private fun MenuRow(icon: ImageVector, label: String, enabled: Boolean, onClick:
     }
 }
 
-// ── Glyphs ── (the mockup's own paths, so the bar matches it exactly)
+// ── Glyphs ── (Shorts bar icons; centred by visual mass, see CLAUDE.md 0.5.50)
 
 private fun glyph(name: String, vararg paths: String, stroke: Float = 0f): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
