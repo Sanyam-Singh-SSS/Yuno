@@ -54,6 +54,8 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -383,16 +385,11 @@ fun VideoContent(
             }
         }
         val chromeAlpha = if (scrubbing) 0f else visibleAlpha * controlsAlpha()
+        SideEffect { VideoControlsOverlay.dimAlpha = chromeAlpha }
+        DisposableEffect(Unit) { onDispose { VideoControlsOverlay.dimAlpha = 0f } }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
             Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.5f),
-                        0.32f to Color.Black.copy(alpha = 0.08f),
-                        0.58f to Color.Black.copy(alpha = 0.08f),
-                        1f to Color.Black.copy(alpha = 0.62f),
-                    ),
-                ),
+                Modifier.fillMaxSize().background(VideoControlsOverlay.scrim),
             )
             val edge = if (fullscreen) {
                 Modifier.fullscreenControlsHorizontalInsets().padding(vertical = FullscreenControlsVerticalPad)

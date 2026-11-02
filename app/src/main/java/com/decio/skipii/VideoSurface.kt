@@ -1,5 +1,6 @@
 package com.decio.skipii
 
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.util.Log
 import android.view.Surface
@@ -62,6 +63,27 @@ object SharedVideoTexture {
         val h = (view.height * scale).roundToInt().coerceAtLeast(1)
         val shot = runCatching { view.getBitmap(w, h) }.getOrNull() ?: return
         HeldFrame.image = shot.asImageBitmap()
+    }
+
+    /**
+     * Top [statusBarPx] of the picture (in view coords). Readback width matches [captureFrame]
+     * (up to 240 on the long edge) so the strip is not over-read from the texture.
+     */
+    fun captureStatusStrip(statusBarPx: Int): android.graphics.Bitmap? {
+        val view = host ?: return null
+        if (!view.isAvailable || view.width < 2 || view.height < 2 || statusBarPx <= 0) return null
+        val edge = max(view.width, view.height)
+        val scale = min(1f, 240f / edge)
+        val sampleWidth = (view.width * scale).roundToInt().coerceAtLeast(1)
+        val fullH = (sampleWidth.toLong() * view.height / view.width).toInt().coerceAtLeast(1)
+        val full = runCatching { view.getBitmap(sampleWidth, fullH) }.getOrNull() ?: return null
+        val bandH = (fullH.toLong() * statusBarPx / view.height).toInt().coerceIn(1, fullH)
+        val strip = android.graphics.Bitmap.createBitmap(full, 0, 0, sampleWidth, bandH)
+        if (full !== strip) full.recycle()
+        val matrix = Matrix().apply { postScale(1f, -1f, strip.width / 2f, bandH / 2f) }
+        return android.graphics.Bitmap.createBitmap(strip, 0, 0, strip.width, bandH, matrix, true).also {
+            if (it !== strip) strip.recycle()
+        }
     }
 
     fun adopt(view: TextureView, fresh: SurfaceTexture) {

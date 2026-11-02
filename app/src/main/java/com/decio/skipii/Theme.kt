@@ -230,7 +230,7 @@ fun rememberRtlLanguage(): Boolean {
     return remember(locale) { android.text.TextUtils.getLayoutDirectionFromLocale(locale) == android.view.View.LAYOUT_DIRECTION_RTL }
 }
 
-/** True while the open player paints the status bar black over its video: icons go white. */
+/** True while the open player scrims the status bar over its video (icon colour follows the scrim). */
 object StatusBarOverVideo {
     var on by mutableStateOf(false)
     /** The Shorts tab: video under both system bars, so both bars' icons go white. */
@@ -246,12 +246,16 @@ object StatusBarOverVideo {
 private fun SystemBars(dark: Boolean, windowBg: Color) {
     val view = LocalView.current
     if (view.isInEditMode) return
-    val overVideo = StatusBarOverVideo.on || StatusBarOverVideo.shorts
     val navOverVideo = StatusBarOverVideo.shorts
+    val videoTopTint = VideoTopSampler.topLuminance
     SideEffect {
         val window = (view.context as? Activity)?.window ?: return@SideEffect
         val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = !dark && !overVideo
+        controller.isAppearanceLightStatusBars = when {
+            StatusBarOverVideo.shorts -> false
+            StatusBarOverVideo.on -> !videoStatusUsesLightIcons(videoTopTint)
+            else -> !dark
+        }
         controller.isAppearanceLightNavigationBars = !dark && !navOverVideo
     }
     DisposableEffect(windowBg) {

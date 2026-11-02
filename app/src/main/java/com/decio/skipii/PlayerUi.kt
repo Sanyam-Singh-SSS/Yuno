@@ -196,16 +196,24 @@ fun PlayerScreen(
         val target = if (AudioOnly.enabled) 1f else 0f
         if (reduced) fold.snapTo(target) else fold.animateTo(target, spring(dampingRatio = 1f, stiffness = 260f, visibilityThreshold = 0.0005f))
     }
-    // Derek, 2026-10-26: over a video the status bar is pitch black (white icons); audio only
-    // and the pages keep the page look. It fades from the page's own color once the video's top
-    // edge is a quarter of the way up the screen (black before the growing frame reaches the
-    // top), and out with the fold.
-    val blackStatus = {
+    // Live blur of the video top in the status-bar strip only.
+    val statusScrimAlpha = {
         val p = progress()
         ramp(p, StatusBlackFromUp, StatusBlackEnd) * (1f - fold.value)
     }
-    LaunchedEffect(Unit) { snapshotFlow { blackStatus() > 0.5f }.collect { StatusBarOverVideo.on = it } }
-    DisposableEffect(Unit) { onDispose { StatusBarOverVideo.on = false } }
+    val statusBarPx = with(LocalDensity.current) { top.roundToPx() }
+    LaunchedEffect(Unit) {
+        VideoTopSampler.start(this)
+        snapshotFlow { statusScrimAlpha() > 0.5f }.collect { StatusBarOverVideo.on = it }
+    }
+    SideEffect { VideoTopSampler.statusBarPx = statusBarPx }
+    DisposableEffect(Unit) {
+        onDispose {
+            VideoTopSampler.stop()
+            VideoTopSampler.statusBarPx = 0
+            StatusBarOverVideo.on = false
+        }
+    }
 
     val pageColor = c.surface
     DisposableEffect(dock) { onDispose { dock.attached = false } }
@@ -356,12 +364,10 @@ fun PlayerScreen(
             )
         }
     }
-    // Outside the morph's frame, so it never slides in with the card: it just fades over
-    // whatever the status bar shows.
-    Box(
-        Modifier.fillMaxWidth().height(top)
-            .graphicsLayer { alpha = blackStatus() }
-            .background(Color.Black),
+    // Outside the morph: blurred video top in the status bar only.
+    VideoTopStatusBlur(
+        height = top,
+        alpha = { statusScrimAlpha() },
     )
 }
 
