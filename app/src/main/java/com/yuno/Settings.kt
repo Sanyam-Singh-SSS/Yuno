@@ -759,7 +759,10 @@ private fun summaryOf(page: SettingsPage): String = when (page) {
             SponsorBlock.Category.entries.count { SponsorBlock.actionFor(it) == SponsorBlock.Action.Button }.toString(),
         )
     SettingsPage.Shorts -> stringResource(if (ShortsSetting.enabled) R.string.ui_shorts_on_line else R.string.settings_off)
-    SettingsPage.Appearance -> modeLabel(ThemeSettings.mode)
+    SettingsPage.Appearance -> listOfNotNull(
+        modeLabel(ThemeSettings.mode),
+        if (isGlassSupported() && LiquidGlassSetting.enabled) stringResource(R.string.settings_liquid_glass) else null,
+    ).joinDots()
     SettingsPage.Language -> AppLanguage.choices.firstOrNull { it.tag == AppLanguage.pickedChoice }?.name ?: phoneLanguageLabel()
     SettingsPage.Notifications -> Bells.on.size.let { n ->
         if (n == 0) stringResource(R.string.settings_bells_none) else pluralStringResource(R.plurals.settings_bells_count, n, n.toString())
@@ -821,6 +824,9 @@ private fun entries(): List<Entry> = buildList {
     add(Entry(SettingsPage.Shorts, "shorts", str(R.string.ui_shorts), listOf(str(R.string.ui_shorts_on_line))))
     val ap = SettingsPage.Appearance
     add(Entry(ap, "mode", str(R.string.settings_mode), listOf(str(R.string.ui_mode_system), str(R.string.ui_mode_light), str(R.string.ui_mode_dark))))
+    if (isGlassSupported()) {
+        add(Entry(ap, "glass", str(R.string.settings_liquid_glass), listOf(str(R.string.settings_liquid_glass_line))))
+    }
     add(Entry(SettingsPage.Language, "lang", str(R.string.language_title), AppLanguage.choices.map { it.name } + str(R.string.language_phone)))
     val nt = SettingsPage.Notifications
     add(Entry(nt, "system", str(R.string.settings_system_notifications), listOf(str(R.string.settings_system_notifications_line))))
@@ -1185,13 +1191,24 @@ private fun ShortsPage() {
 @Composable
 private fun AppearancePage() {
     Spacer(Modifier.height(14.dp))
-    Joined(1) { _, shape ->
-        ChipsSetting(
-            "mode", shape, stringResource(R.string.settings_mode), null,
-            listOf("system", "light", "dark").map { it to modeLabel(it) },
-            ThemeSettings.mode,
-            icon = Icons.Rounded.DarkMode,
-        ) { ThemeSettings.chooseMode(it) }
+    val glass = isGlassSupported()
+    Joined(if (glass) 2 else 1) { i, shape ->
+        when {
+            glass && i == 0 -> SwitchSetting(
+                "glass",
+                shape,
+                stringResource(R.string.settings_liquid_glass),
+                stringResource(R.string.settings_liquid_glass_line),
+                LiquidGlassSetting.enabled,
+                onChange = LiquidGlassSetting::set,
+            )
+            else -> ChipsSetting(
+                "mode", shape, stringResource(R.string.settings_mode), null,
+                listOf("system", "light", "dark").map { it to modeLabel(it) },
+                ThemeSettings.mode,
+                icon = Icons.Rounded.DarkMode,
+            ) { ThemeSettings.chooseMode(it) }
+        }
     }
 }
 

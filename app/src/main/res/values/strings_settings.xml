@@ -29,6 +29,8 @@
     <!-- SponsorBlock's summary: %1$s segment types skipped, %2$s asked about. -->
     <string name="settings_sb_summary">Skips %1$s, asks about %2$s</string>
     <string name="settings_mode">Mode</string>
+    <string name="settings_liquid_glass">Liquid Glass</string>
+    <string name="settings_liquid_glass_line">Frosted, refractive bar that samples the page behind it</string>
     <string name="settings_theme">Theme</string>
     <plurals name="settings_bells_count">
         <item quantity="one">%1$s channel with the bell on</item>
