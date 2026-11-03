@@ -126,7 +126,8 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
         derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 4 }
     }
     LaunchedEffect(nearEnd, state.videos.size) { if (nearEnd && state.videos.isNotEmpty()) state.loadMore() }
-    val top = pageContentTop()
+    // Same clearance as Home before the first feed row: pageContentTop + the in-list title block.
+    val top = pageBodyTop()
     Box(Modifier.fillMaxSize().background(c.background)) {
         Box(Modifier.fillMaxSize()) {
         val d = state.details
@@ -185,7 +186,7 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                 if (state.loading || state.hasMore) item { FeedSkeletons(1) }
             }
         }
-        PageTopFade()
+        PageTopFade(if (d != null) list else null)
         }
         PageTopBar(onBack = onBack, shown = barShown)
     }
