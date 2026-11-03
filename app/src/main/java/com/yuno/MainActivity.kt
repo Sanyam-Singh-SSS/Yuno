@@ -194,7 +194,8 @@ fun YunoApp() {
     LaunchedEffect(openSearch) { if (openSearch) search.reset() }
     // Kept after closing so the page can slide out with its content.
     var channelState by remember { mutableStateOf<ChannelState?>(null) }
-    val playlistFeed = remember(openPlaylist?.id) { openPlaylist?.let { lib.playlistFeed(it.id) } }
+    var playlistHold by remember { mutableStateOf<PlaylistRef?>(null) }
+    LaunchedEffect(openPlaylist) { if (openPlaylist != null) playlistHold = openPlaylist }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     // Shorts: its own feed and players; ‹ (and Back) return to the tab it was opened from.
     // One per process (YunoApplication), so its bank keeps filling with no window open.
@@ -468,8 +469,8 @@ fun YunoApp() {
             enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
             exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
         ) {
-            val pl = openPlaylist
-            val feed = playlistFeed
+            val pl = playlistHold
+            val feed = remember(pl?.id) { pl?.let { lib.playlistFeed(it.id) } }
             if (pl != null && feed != null) {
                 PlaylistScreen(
                     pl, feed, contentPadding,
