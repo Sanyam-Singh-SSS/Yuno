@@ -42,7 +42,10 @@ data class ChannelHeaderMeta(val handle: String?, val subscribers: Long, val vid
 enum class LikeStatus { Like, Dislike, None }
 
 @Immutable
-data class VideoAccountState(val like: LikeStatus, val subscribed: Boolean?, val channelId: String?)
+data class VideoAccountState(val like: LikeStatus, val subscribed: Boolean?, val channelId: String?, val bell: Boolean? = null)
+
+/** One channel of the account's subscriptions list, with its bell (true = "All"; null = not given). */
+data class SubscribedChannel(val ref: ChannelRef, val bell: Boolean?)
 
 class NotSignedInException : IOException("Not signed in")
 
@@ -111,6 +114,7 @@ object Account {
         synchronized(cookies) { cookies.clear() }
         store?.clear()
         profile = null
+        Bells.clear()
         android.webkit.CookieManager.getInstance().apply { removeAllCookies(null); flush() }
     }
 
@@ -207,12 +211,20 @@ object Account {
 object InnerTube {
     private const val BASE = "https://www.youtube.com/youtubei/v1/"
     private val JSON_TYPE = "application/json".toMediaType()
+    /** InnerTube ANDROID client version (notification writes sometimes require this client). */
+    private const val ANDROID_CLIENT_VERSION = "19.47.39"
 
     /** Signed in when there's a session, otherwise anonymous (public pages like channels). */
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false): JSONObject {
+    internal fun post(
+        endpoint: String,
+        body: JSONObject,
+        anonymous: Boolean = false,
+        referer: String = Account.ORIGIN + "/",
+        clientOriginalUrl: String? = null,
+    ): JSONObject {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
         body.put(
             "context",
@@ -223,7 +235,10 @@ object InnerTube {
                     .put("clientVersion", Account.clientVersion())
                     .put("hl", "en")
                     .put("gl", "US")
-                    .apply { Account.visitorData()?.let { put("visitorData", it) } },
+                    .apply {
+                        Account.visitorData()?.let { put("visitorData", it) }
+                        clientOriginalUrl?.let { put("originalUrl", it) }
+                    },
             ),
         )
         val request = Request.Builder()
@@ -233,7 +248,7 @@ object InnerTube {
             .apply { if (auth != null) { header("Cookie", Account.cookieHeader()); header("Authorization", auth) } }
             .header("Origin", Account.ORIGIN)
             .header("X-Origin", Account.ORIGIN)
-            .header("Referer", Account.ORIGIN + "/")
+            .header("Referer", referer)
             .header("X-Goog-AuthUser", "0")
             .header("X-Youtube-Client-Name", "1")
             .header("X-Youtube-Client-Version", Account.clientVersion())
@@ -243,7 +258,13 @@ object InnerTube {
             if (auth != null) Account.absorbSetCookies(r.headers("Set-Cookie"))
             val text = r.body?.string().orEmpty()
             if (r.code == 401 || r.code == 403) throw IOException("YouTube rejected the session (${r.code}). Try signing in again.")
-            if (!r.isSuccessful) throw IOException("YouTube returned ${r.code}")
+            if (!r.isSuccessful) {
+                val detail = runCatching {
+                    JSONObject(text).optJSONObject("error")?.optJSONArray("message")?.optJSONObject(0)
+                        ?.optString("simpleText")?.ifBlank { null }
+                }.getOrNull() ?: text.take(160).ifBlank { null }
+                throw IOException(if (detail != null) "YouTube returned ${r.code}: $detail" else "YouTube returned ${r.code}")
+            }
             return JSONObject(text)
         }
     }
@@ -350,12 +371,28 @@ object InnerTube {
         out.values.filterNot { it.id == "WL" || it.id == "LL" }
     }
 
-    /** Like state and subscription for a video, from the signed-in watch page data. */
+    /**
+     * Like state, subscription and bell for a video, from the signed-in watch page data. The bell
+     * it reports is kept in [Bells] (every page that shows it keeps the local copy current).
+     */
     suspend fun videoState(videoId: String): VideoAccountState = withContext(Dispatchers.IO) {
-        val next = post("next", JSONObject().put("videoId", videoId))
+        val next = post(
+            "next",
+            JSONObject().put("videoId", videoId).put("contentCheckOk", true).put("racyCheckOk", true),
+        )
+        val state = parseVideoState(next)
+        val owner = next.findObject("videoOwnerRenderer")
+        state.channelId?.let {
+            Bells.learn(it, state.subscribed, state.bell, owner?.text("title"), owner?.thumbnails()?.lastOrNull()?.let(::absoluteUrl))
+        }
+        state
+    }
+
+    internal fun parseVideoState(next: JSONObject): VideoAccountState {
         var like = LikeStatus.None
         var subscribed: Boolean? = null
         var channelId: String? = null
+        var bell: Boolean? = null
         next.walk { key, obj ->
             when (key) {
                 "likeStatusEntity" -> like = when (obj.optString("likeStatus")) {
@@ -368,22 +405,89 @@ object InnerTube {
                     obj.optString("channelId").ifBlank { null }?.let { channelId = it }
                 }
                 "subscriptionStateEntity" -> if (obj.has("subscribed")) subscribed = obj.optBoolean("subscribed")
+                "subscriptionNotificationToggleButtonRenderer" -> if (bell == null) bell = parseBell(obj)
                 "videoOwnerRenderer" -> obj.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
                     ?.optString("browseId")?.takeIf { it.startsWith("UC") }?.let { if (channelId == null) channelId = it }
             }
         }
-        VideoAccountState(like, subscribed, channelId)
+        return VideoAccountState(like, subscribed, channelId, bell)
     }
 
-    /** Whether the account follows [channelId] (from the channel page's subscribe button). */
-    suspend fun channelSubscribed(channelId: String): Boolean? = withContext(Dispatchers.IO) {
+    /** Whether the account follows [channelId] (from the channel page's subscribe button); its bell goes to [Bells]. */
+    suspend fun channelSubscribed(channelId: String, name: String? = null, avatar: String? = null): Boolean? = withContext(Dispatchers.IO) {
         var subscribed: Boolean? = null
-        post("browse", JSONObject().put("browseId", channelId)).walk { key, obj ->
+        var bell: Boolean? = null
+        val page = post("browse", JSONObject().put("browseId", channelId))
+        page.walk { key, obj ->
             if ((key == "subscribeButtonRenderer" || key == "subscriptionStateEntity") && obj.has("subscribed") && subscribed == null) {
                 subscribed = obj.optBoolean("subscribed")
             }
+            if (key == "subscriptionNotificationToggleButtonRenderer" && bell == null) bell = parseBell(obj)
         }
+        Bells.learn(channelId, subscribed, bell, name, avatar)
         subscribed
+    }
+
+    /**
+     * A subscribe button's bell (`subscriptionNotificationToggleButtonRenderer`): true = "All",
+     * false = "Personalized" or "None", null = can't tell. Read from the current state's icon
+     * (NOTIFICATIONS_ACTIVE = All), else its id (2 All, 3 Personalized, 0 None).
+     */
+    internal fun parseBell(toggle: JSONObject): Boolean? {
+        val current = toggle.optInt("currentStateId", -1)
+        val states = toggle.optJSONArray("states")
+        for (i in 0 until (states?.length() ?: 0)) {
+            val s = states?.optJSONObject(i) ?: continue
+            if (s.optInt("stateId", -2) != current) continue
+            when (s.collectStrings("iconType").firstOrNull()) {
+                "NOTIFICATIONS_ACTIVE" -> return true
+                "NOTIFICATIONS_NONE", "NOTIFICATIONS_OFF" -> return false
+            }
+        }
+        return when (current) {
+            2 -> true
+            0, 3 -> false
+            else -> null
+        }
+    }
+
+    /**
+     * Every channel the account follows with its bell, from the subscriptions page (FEchannels),
+     * all its pages. Null if a page failed (a partial list mustn't turn bells off).
+     */
+    suspend fun subscriptions(): List<SubscribedChannel>? = withContext(Dispatchers.IO) {
+        val out = LinkedHashMap<String, SubscribedChannel>()
+        var page: JSONObject? = post("browse", JSONObject().put("browseId", "FEchannels"))
+        var pages = 0
+        while (page != null) {
+            val (channels, next) = parseSubscriptions(page)
+            channels.forEach { out.putIfAbsent(it.ref.id, it) }
+            if (next == null) break
+            if (++pages >= 50) return@withContext null
+            page = runCatching { post("browse", JSONObject().put("continuation", next)) }.getOrElse {
+                Log.w("Yuno", "bells: subscriptions page ${pages + 1} failed (${it.message})")
+                return@withContext null
+            }
+        }
+        out.values.toList()
+    }
+
+    internal fun parseSubscriptions(root: JSONObject): Pair<List<SubscribedChannel>, String?> {
+        val out = LinkedHashMap<String, SubscribedChannel>()
+        var next: String? = null
+        root.walk { key, obj ->
+            when (key) {
+                "channelRenderer", "gridChannelRenderer" -> {
+                    val id = obj.optString("channelId").ifBlank { return@walk }
+                    out.putIfAbsent(id, SubscribedChannel(
+                        ref = ChannelRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl)),
+                        bell = obj.findObject("subscriptionNotificationToggleButtonRenderer")?.let(::parseBell),
+                    ))
+                }
+                "continuationItemRenderer", "continuationItemViewModel" -> obj.collectStrings("token").firstOrNull()?.let { next = it }
+            }
+        }
+        return out.values.toList() to next
     }
 
     // ── Shorts ─────────────────────────────────────────────────────────────────
@@ -472,6 +576,32 @@ object InnerTube {
         )
         Unit
     }
+
+    /** The channel's bell: [all] = "All" (every upload), else "Personalized", YouTube's default. */
+    suspend fun setBell(channelId: String, all: Boolean) = withContext(Dispatchers.IO) {
+        post("notification/modify_channel_preference", JSONObject().put("params", bellParams(channelId, if (all) BELL_ALL else BELL_PERSONALIZED)))
+        Unit
+    }
+
+    private const val BELL_PERSONALIZED = 1
+    private const val BELL_ALL = 2
+
+    /**
+     * What the bell menu's items carry (modifyChannelNotificationPreferenceEndpoint.params, a
+     * protobuf): 1 = channel id, 2 = { 1 = preference }, 3 = 0, 4 = 4, URL-encoded base64 as in the
+     * answer. Preferences per YouTube.js: 1 Personalized, 2 All, 3 None. youtube.com's own items
+     * add 10 = the watch page's video; the request works without (YouTube.js leaves it out).
+     * Built here rather than taken from the menu: the menu isn't at hand everywhere (the
+     * subscriptions list, Shorts), and not every menu lists "All" (next.json's, for a channel not
+     * subscribed, has only Personalized / None). Written by hand; no protobuf library.
+     */
+    internal fun bellParams(channelId: String, preference: Int): String {
+        val id = channelId.toByteArray()
+        val bytes = byteArrayOf(0x0A, id.size.toByte()) + id +
+            byteArrayOf(0x12, 0x02, 0x08, preference.toByte(), 0x18, 0x00, 0x20, 0x04)
+        return java.net.URLEncoder.encode(java.util.Base64.getEncoder().encodeToString(bytes), "UTF-8")
+    }
+
 
     suspend fun setInWatchLater(videoId: String, add: Boolean) = setInPlaylist("WL", videoId, add)
 
@@ -818,6 +948,12 @@ object InnerTube {
 }
 
 // ── JSON helpers ───────────────────────────────────────────────────────────────
+
+internal fun JSONObject.findObject(key: String): JSONObject? {
+    var found: JSONObject? = null
+    walk { k, o -> if (found == null && k == key) found = o }
+    return found
+}
 
 /** Depth-first visit of every object-valued key in the tree. */
 internal fun JSONObject.walk(visit: (key: String, obj: JSONObject) -> Unit) {

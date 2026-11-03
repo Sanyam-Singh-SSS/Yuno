@@ -13,6 +13,7 @@ class YunoApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        AppLanguage.init(this)
         NewPipe.init(NewPipeDownloader.instance)
         // The iOS client only adds HLS livestream formats; Yuno plays VOD, so skip that request.
         org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.setFetchIosClient(false)
@@ -22,11 +23,16 @@ class YunoApplication : Application(), ImageLoaderFactory {
         QualityPreference.init(this)
         PlaybackSpeed.init(this)
         AudioOnly.init(this)
+        PlayerControls.init(this)
+        CaptionSettings.init(this)
+        CaptionTranslator.refresh()
         SearchHistory.init(this)
         ResumeStore.init(this)
         WatchHistory.init(this)
         SavedSession.init(this)
         Account.init(this)
+        Bells.init(this)
+        NewVideos.schedule(this)
         SponsorBlock.init(this)
         ShortsSetting.init(this)
         ShortsBank.init(this)

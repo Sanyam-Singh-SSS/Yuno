@@ -1,4 +1,4 @@
-package com.yuno
+﻿package com.yuno
 
 import android.util.Log
 
@@ -11,6 +11,8 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +37,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -46,6 +50,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -58,14 +63,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -93,7 +103,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import com.yuno.icons.SfIcons
 
 /** Comments for the open video: first page, paging, per-comment replies, likes and posting. */
 @Stable
@@ -127,7 +136,7 @@ class CommentsState(private val scope: CoroutineScope) {
         liked[comment.id] = now
         scope.launch {
             runCatching { CommentPosting.setLiked(id, comment.id, now) }
-                .onFailure { liked[comment.id] = !now; onError(it.message ?: "Couldn't like that comment.") }
+                .onFailure { liked[comment.id] = !now; onError(it.message ?: str(R.string.comments_error_like)) }
         }
     }
     val repliesLoading = mutableStateMapOf<String, Boolean>()
@@ -227,14 +236,12 @@ class CommentsState(private val scope: CoroutineScope) {
     var postError by mutableStateOf<String?>(null)
 
     fun startReply(comment: Comment) {
-        if (!Account.signedIn) { postError = "Sign in to reply."; return }
         replyingTo = comment
         // Replies to a reply go to the same thread, addressed with an @mention (as on YouTube).
         if (comment.id.contains('.') && draft.isBlank()) draft = "${comment.author.trim()} "
     }
 
     fun post() {
-        if (!Account.signedIn) { postError = "Sign in to comment."; return }
         val id = videoId ?: return
         val text = draft.trim()
         if (text.isEmpty() || posting) return
@@ -249,10 +256,11 @@ class CommentsState(private val scope: CoroutineScope) {
                 val profile = Account.profile
                 val mine = Comment(
                     id = "local-${System.nanoTime()}",
-                    author = profile?.handle ?: profile?.name ?: "You",
+                    author = profile?.handle ?: profile?.name ?: str(R.string.comments_you),
                     channelId = null,
                     name = profile?.name,
                     avatar = profile?.avatar,
+                    // English, as YouTube writes ages: shown through displayAge.
                     text = text, likes = 0, ago = "just now",
                     pinned = false, hearted = false, replyCount = 0, repliesToken = null,
                 )
@@ -264,7 +272,7 @@ class CommentsState(private val scope: CoroutineScope) {
                 }
                 draft = ""
                 replyingTo = null
-            }.onFailure { postError = it.message ?: "Couldn't post your comment." }
+            }.onFailure { postError = it.message ?: str(R.string.comments_error_post) }
             posting = false
         }
     }
@@ -280,20 +288,20 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
         modifier = Modifier
             .padding(top = 16.dp)
             .fillMaxWidth()
-            .pressable(enabled = !state.disabled && (state.comments.isNotEmpty() || !state.loading), pressedScale = 0.98f, onClick = onOpen)
+            .pressable(enabled = state.comments.isNotEmpty() || (Account.signedIn && !state.disabled && !state.loading), pressedScale = 0.98f, onClick = onOpen)
             .clip(shape)
             .background(c.surfaceContainerLow)
-            .padding(horizontal = PageGutter, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Comments", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.comments_title), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
             if (state.total > 0) {
                 Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
         Spacer(Modifier.height(10.dp))
         when {
-            state.disabled -> Text("Comments are turned off for this video.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
+            state.disabled -> Text(stringResource(R.string.comments_turned_off), color = c.onSurfaceVariant, fontSize = 13.5.sp)
             first != null -> Row {
                 ChannelAvatar(first.avatar, first.author, size = 30)
                 Spacer(Modifier.width(10.dp))
@@ -307,9 +315,9 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            state.loading -> CommentSkeletons(count = 1, avatar = 30.dp)
+            state.loading -> CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(22.dp))
             state.error != null -> Text(state.error.orEmpty(), color = c.onSurfaceVariant, fontSize = 13.5.sp)
-            else -> Text("No comments yet. Add the first one.", color = c.onSurfaceVariant, fontSize = 13.5.sp)
+            else -> Text(stringResource(if (Account.signedIn) R.string.comments_none_add_first else R.string.comments_none), color = c.onSurfaceVariant, fontSize = 13.5.sp)
         }
     }
 }
@@ -322,12 +330,63 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
  * down move the panel the same way (Derek, 2026-10-10).
  */
 @Composable
-fun CommentsPanel(
-    state: CommentsState,
+fun CommentsPanel(state: CommentsState, partialTop: Dp, onClose: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    PlayerPanel(
+        partialTop = partialTop,
+        onClose = onClose,
+        closeLabel = stringResource(R.string.comments_close),
+        title = {
+            Text(stringResource(R.string.comments_title), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
+            if (state.total > 0) {
+                Spacer(Modifier.width(8.dp))
+                Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        },
+    ) { listModifier ->
+        val list = rememberLazyListState()
+        val nearEnd by remember {
+            derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 4 }
+        }
+        LaunchedEffect(nearEnd) { if (nearEnd) state.loadMore() }
+        LazyColumn(state = list, modifier = listModifier) {
+            items(state.comments, key = { it.id }) { comment -> CommentRow(comment, state) }
+            if (state.loading || state.hasMore) item {
+                Box(Modifier.fillMaxWidth().padding(20.dp), Alignment.Center) {
+                    CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
+                }
+            }
+            if (!state.loading && state.comments.isEmpty()) item {
+                Text(
+                    stringResource(if (state.disabled) R.string.comments_turned_off else R.string.comments_none),
+                    color = c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(20.dp),
+                )
+            }
+            item { Spacer(Modifier.height(12.dp)) }
+        }
+        if (Account.signedIn) Composer(state) else Text(
+            stringResource(R.string.comments_sign_in_to_comment),
+            color = c.onSurfaceVariant, fontSize = 13.sp,
+            modifier = Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 20.dp, vertical = 14.dp),
+        )
+        // Clear of the gesture bar when the keyboard isn't up.
+        Spacer(Modifier.fillMaxWidth().background(c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
+    }
+}
+
+/**
+ * The panel the comments and the transcript open in, over the player's details with its top just under
+ * the video. Drag the top handle (and [title]) up to cover the screen, down to shrink or close; a fling
+ * decides on its own. [content] gets the modifier for its list (it fills the room left and, once at its
+ * top, a further pull down moves the panel); anything after the list stays pinned to the bottom.
+ */
+@Composable
+fun PlayerPanel(
     partialTop: Dp,
     onClose: () -> Unit,
-    creatorAvatar: String? = null,
-    creatorName: String = "",
+    closeLabel: String,
+    title: @Composable RowScope.() -> Unit,
+    content: @Composable ColumnScope.(listModifier: Modifier) -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
     val density = LocalDensity.current
@@ -427,44 +486,52 @@ fun CommentsPanel(
                 Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), Alignment.Center) {
                     Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(c.onSurfaceVariant.copy(alpha = 0.45f)))
                 }
-                Row(Modifier.padding(start = PageGutter, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Comments", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
-                    if (state.total > 0) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
+                Row(Modifier.padding(start = 20.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    title()
                     Spacer(Modifier.weight(1f))
                     Box(Modifier.size(44.dp).pressable { close() }, contentAlignment = Alignment.Center) {
-                        Icon(SfIcons.Close, "Close comments", tint = c.onSurfaceVariant)
+                        Icon(Icons.Rounded.Close, closeLabel, tint = c.onSurfaceVariant)
                     }
                 }
             }
-            val list = rememberLazyListState()
-            val nearEnd by remember {
-                derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 4 }
+            content(Modifier.weight(1f).nestedScroll(listPull))
+        }
+    }
+}
+
+/**
+ * Wide windows (Rail 3): the comments flow in the player's own list under the details, as they read
+ * on a page, instead of a card that opens a panel. The heading with the count, the comment box when
+ * signed in, then every comment with its replies; the next page loads as the end comes into view.
+ */
+fun LazyListScope.inlineComments(state: CommentsState) {
+    item(key = "commentsHead") {
+        val c = MaterialTheme.colorScheme
+        Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.comments_title), fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
+            if (state.total > 0) {
+                Spacer(Modifier.width(8.dp))
+                Text(formatCount(state.total.toLong()), color = c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
-            LaunchedEffect(nearEnd) { if (nearEnd) state.loadMore() }
-            LazyColumn(state = list, modifier = Modifier.weight(1f).nestedScroll(listPull)) {
-                items(state.comments, key = { it.id }) {
-                    CommentRow(it, state, creatorAvatar, creatorName)
-                }
-                if (state.comments.isEmpty() && state.loading) item {
-                    CommentSkeletons(start = PageGutter)
-                }
-                if (state.comments.isNotEmpty() && (state.loading || state.hasMore)) item {
-                    CommentSkeletons(count = 2, start = PageGutter)
-                }
-                if (!state.loading && state.comments.isEmpty()) item {
-                    Text(
-                        if (state.disabled) "Comments are turned off for this video." else "No comments yet.",
-                        color = c.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(20.dp),
-                    )
-                }
-                item { Spacer(Modifier.height(12.dp)) }
+        }
+    }
+    if (Account.signedIn && !state.disabled) item(key = "commentsComposer") {
+        Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(26.dp))) { Composer(state) }
+    }
+    items(state.comments, key = { "comment-" + it.id }) { comment -> CommentRow(comment, state) }
+    when {
+        state.loading || state.hasMore -> item(key = "commentsMore") {
+            // Composed as it nears the screen: that's the cue for the next page.
+            LaunchedEffect(state.comments.size) { state.loadMore() }
+            Box(Modifier.fillMaxWidth().padding(20.dp), Alignment.Center) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
             }
-            Composer(state)
-            // Clear of the gesture bar when the keyboard isn't up.
-            Spacer(Modifier.fillMaxWidth().background(c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
+        }
+        state.comments.isEmpty() -> item(key = "commentsNone") {
+            Text(
+                state.error ?: stringResource(if (state.disabled) R.string.comments_turned_off else R.string.comments_none),
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
         }
     }
 }
@@ -487,12 +554,12 @@ private fun Composer(state: CommentsState) {
     }
     // Tapping Reply focuses the field.
     LaunchedEffect(state.replyingTo) { if (state.replyingTo != null) runCatching { requester.requestFocus() } }
-    Column(Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = PageGutter, vertical = 10.dp)) {
+    Column(Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 12.dp, vertical = 10.dp)) {
         state.replyingTo?.let { target ->
             Row(Modifier.padding(start = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Replying to ${target.displayName()}", color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.comments_replying_to, target.displayName()), color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Box(Modifier.size(28.dp).pressable { state.replyingTo = null }, contentAlignment = Alignment.Center) {
-                    Icon(SfIcons.Close, "Cancel reply", tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Close, stringResource(R.string.comments_cancel_reply), tint = c.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -503,7 +570,7 @@ private fun Composer(state: CommentsState) {
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 if (state.draft.isEmpty()) {
-                    Text(if (state.replyingTo != null) "Add a reply…" else "Add a comment…", color = c.onSurfaceVariant, fontSize = 15.sp)
+                    Text(stringResource(if (state.replyingTo != null) R.string.comments_add_reply else R.string.comments_add_comment), color = c.onSurfaceVariant, fontSize = 15.sp)
                 }
                 BasicTextField(
                     value = state.draft,
@@ -529,49 +596,23 @@ private fun Composer(state: CommentsState) {
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.posting) CircularProgressIndicator(color = c.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                else Icon(SfIcons.Send, "Post", tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                else Icon(Icons.AutoMirrored.Rounded.Send, stringResource(R.string.comments_post), tint = if (canSend) c.onPrimary else c.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
 
 @Composable
-private fun CreatorHeartBadge(avatarUrl: String?, name: String) {
+private fun CommentRow(comment: Comment, state: CommentsState, isReply: Boolean = false) {
     val c = MaterialTheme.colorScheme
-    val avatarPx = 22
-    Box(Modifier.size(26.dp), contentAlignment = Alignment.TopStart) {
-        ChannelAvatar(avatarUrl, name, size = avatarPx)
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 2.dp, y = 2.dp)
-                .size(13.dp)
-                .clip(CircleShape)
-                .background(c.surface),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(SfIcons.HeartFill, "Hearted by creator", tint = c.primary, modifier = Modifier.size(9.dp))
-        }
-    }
-}
-
-@Composable
-private fun CommentRow(
-    comment: Comment,
-    state: CommentsState,
-    creatorAvatar: String?,
-    creatorName: String,
-    isReply: Boolean = false,
-) {
-    val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(start = if (isReply) PageGutter + 42.dp else PageGutter, end = PageGutter, top = 10.dp, bottom = 6.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = if (isReply) 62.dp else 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)) {
         ChannelAvatar(comment.avatar, comment.author, size = if (isReply) 28 else 36)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (comment.pinned) Icon(SfIcons.Pin, "Pinned", tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                if (comment.pinned) Icon(Icons.Rounded.PushPin, stringResource(R.string.comments_pinned), tint = c.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(comment.displayName(), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                comment.ago?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
+                displayAge(comment.ago)?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
             }
             Spacer(Modifier.height(3.dp))
             Text(comment.text, fontSize = 14.sp, lineHeight = 20.sp)
@@ -579,20 +620,17 @@ private fun CommentRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Like (signed in): pops like the video's like, and the count follows.
                 val isLiked = state.liked[comment.id] == true
-                val own = comment.id.startsWith("local-")
+                val canLike = Account.signedIn && !comment.id.startsWith("local-")
                 val likeTint = if (isLiked) c.primary else c.onSurfaceVariant
                 Row(
                     Modifier
-                        .pressable(enabled = !own) {
-                            if (Account.signedIn) state.toggleLike(comment) { state.postError = it }
-                            else state.postError = "Sign in to like comments."
-                        }
+                        .pressable(enabled = canLike) { state.toggleLike(comment) { state.postError = it } }
                         .padding(vertical = 4.dp, horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FlourishIcon(
-                        if (isLiked) SfIcons.ThumbUpFill else SfIcons.ThumbUp,
-                        if (isLiked) "Unlike" else "Like",
+                        if (isLiked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+                        stringResource(if (isLiked) R.string.comments_unlike else R.string.comments_like),
                         active = isLiked, kind = Flourish.Pop, tint = likeTint, size = 16.dp,
                     )
                     val count = comment.likes + if (isLiked) 1 else 0
@@ -602,17 +640,13 @@ private fun CommentRow(
                     }
                 }
                 if (comment.hearted) {
-                    Spacer(Modifier.width(10.dp))
-                    if (creatorName.isNotBlank()) {
-                        CreatorHeartBadge(creatorAvatar, creatorName)
-                    } else {
-                        Icon(SfIcons.HeartFill, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
-                    }
+                    Spacer(Modifier.width(12.dp))
+                    Icon(Icons.Rounded.Favorite, stringResource(R.string.comments_hearted), tint = c.primary, modifier = Modifier.size(14.dp))
                 }
-                if (!comment.id.startsWith("local-")) {
+                if (Account.signedIn && !comment.id.startsWith("local-")) {
                     Spacer(Modifier.width(16.dp))
                     Text(
-                        "Reply",
+                        stringResource(R.string.comments_reply),
                         color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
                         modifier = Modifier.pressable { state.startReply(comment) }.padding(vertical = 2.dp),
                     )
@@ -620,6 +654,7 @@ private fun CommentRow(
             }
             if (!isReply && comment.replyCount > 0 && comment.repliesToken != null) {
                 val open = state.replies.containsKey(comment.id)
+                val busy = state.repliesLoading[comment.id] == true
                 Row(
                     modifier = Modifier
                         .padding(top = 6.dp)
@@ -628,23 +663,21 @@ private fun CommentRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (open) "Hide replies" else "${comment.replyCount} ${if (comment.replyCount == 1) "reply" else "replies"}",
+                        if (open) stringResource(R.string.comments_hide_replies)
+                        else plural(R.plurals.comments_replies, comment.replyCount.toLong(), comment.replyCount.toString()),
                         color = c.primary,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 13.sp,
                     )
+                    if (busy) {
+                        Spacer(Modifier.width(8.dp))
+                        CircularProgressIndicator(color = c.primary, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
         }
     }
-    if (!isReply && comment.replyCount > 0 && comment.repliesToken != null &&
-        state.repliesLoading[comment.id] == true && !state.replies.containsKey(comment.id)
-    ) {
-        CommentSkeletons(count = 1, avatar = 28.dp, start = 62.dp)
-    }
     if (!isReply) {
-        state.replies[comment.id]?.forEach { reply ->
-            CommentRow(reply, state, creatorAvatar, creatorName, isReply = true)
-        }
+        state.replies[comment.id]?.forEach { reply -> CommentRow(reply, state, isReply = true) }
     }
 }

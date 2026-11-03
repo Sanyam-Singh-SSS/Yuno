@@ -2,6 +2,7 @@ package com.yuno
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
@@ -19,7 +20,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -78,6 +82,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -87,6 +92,10 @@ import com.yuno.icons.SfIcons
 
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -178,7 +187,7 @@ fun YunoApp() {
     val scope = rememberCoroutineScope()
     val search = remember { SearchState(scope) }
     val lib = remember { LibraryData(scope) }
-    var accountSheet by remember { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
     var openChannel by remember { mutableStateOf<String?>(null) }
     var openSearch by remember { mutableStateOf(false) }
@@ -215,8 +224,15 @@ fun YunoApp() {
     playerSheetMotion.windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     LaunchedEffect(player.current?.id) { HeldFrame.image = null }
 
-    // The screen stays on while a video plays (full player, mini-player or fullscreen);
-    // paused, the normal timeout applies again. Only affects the visible window.
+    LaunchedEffect(Unit) {
+        val video = NewVideos.opening ?: return@LaunchedEffect
+        NewVideos.opening = null
+        settingsOpen = false
+        if (tab == Tab.Shorts) tab = shortsFrom
+        player.open(video)
+    }
+
+    // The screen stays on while a video plays
     val rootView = LocalView.current
     DisposableEffect(player.isPlaying, shorts.playing) {
         rootView.keepScreenOn = player.isPlaying || shorts.playing
@@ -408,12 +424,12 @@ fun YunoApp() {
             when (t) {
                 Tab.Home -> HomeScreen(
                     lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    onSignIn = { signingIn = true }, onAccount = { settingsOpen = true },
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
                 )
                 Tab.Subscriptions -> SubscriptionsScreen(
                     lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    onSignIn = { signingIn = true }, onAccount = { settingsOpen = true },
                     scrollToTop = scrollToTop[Tab.Subscriptions] ?: 0,
                 )
                 Tab.Shorts -> ShortsScreen(
@@ -426,7 +442,7 @@ fun YunoApp() {
                 Tab.Library -> LibraryScreen(
                     lib, contentPadding, onOpen = player::open, onOpenPlaylist = { openPlaylist = it },
                     onSearch = { openSearch = true },
-                    onSignIn = { signingIn = true }, onAccount = { accountSheet = true },
+                    onSignIn = { signingIn = true }, onAccount = { settingsOpen = true },
                     scrollToTop = scrollToTop[Tab.Library] ?: 0,
                 )
             }
@@ -442,7 +458,6 @@ fun YunoApp() {
                 contentPadding,
                 onBack = { openSearch = false },
                 onOpen = player::open,
-                barShown = openSearch,
             )
         }
 
@@ -460,7 +475,6 @@ fun YunoApp() {
                     onBack = { openPlaylist = null },
                     onOpen = player::open,
                     channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
-                    barShown = openPlaylist != null,
                 )
             }
         }
@@ -524,8 +538,13 @@ fun YunoApp() {
         }
 
         // The nav pill steps down out of the way of the comments panel (its composer sits there).
+        val settingsAway by animateFloatAsState(
+            if (settingsOpen) 1f else 0f,
+            if (reduced) snap() else Motion.MoodiiSpatial(),
+            label = "settingsAway",
+        )
         val navAside by animateFloatAsState(
-            if ((player.sheet == PlayerSheet.Comments && playerOpen) || shorts.commentsOpen) 1f else 0f,
+            if ((player.sheet.isPanel && playerOpen) || shorts.commentsOpen) 1f else 0f,
             if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "navAside",
         )
         val onSelectTab: (Tab) -> Unit = { selected ->
@@ -562,8 +581,9 @@ fun YunoApp() {
                     .fillMaxWidth()
                     .padding(start = NavBarGutter, end = NavBarGutter, bottom = stackBottom)
                     .graphicsLayer {
-                        translationY = navAside * (NavHeight + stackBottom + 24.dp).toPx()
-                        alpha = 1f - navAside
+                        val away = maxOf(navAside, settingsAway)
+                        translationY = away * (NavHeight + stackBottom + 24.dp).toPx()
+                        alpha = 1f - away
                     },
             )
         } else {
@@ -574,8 +594,9 @@ fun YunoApp() {
                     .fillMaxWidth()
                     .padding(bottom = stackBottom)
                     .graphicsLayer {
-                        translationY = navAside * (NavHeight + stackBottom + 24.dp).toPx()
-                        alpha = 1f - navAside
+                        val away = maxOf(navAside, settingsAway)
+                        translationY = away * (NavHeight + stackBottom + 24.dp).toPx()
+                        alpha = 1f - away
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -602,11 +623,21 @@ fun YunoApp() {
 
         // Shorts keeps this same bar. Like, comments, share and the channel sit on the
         // video (Shorts.kt), and the progress line sits just above the bar.
-        if (accountSheet) {
-            AccountSheet(
+        AnimatedVisibility(
+            visible = settingsOpen,
+            enter = if (reduced) fadeIn(snap()) else
+                scaleIn(spring(dampingRatio = 0.82f, stiffness = 380f), initialScale = 0.94f) +
+                    slideInVertically(spring(dampingRatio = 0.82f, stiffness = 380f)) { it / 12 } + fadeIn(tween(220)),
+            exit = if (reduced) fadeOut(snap()) else
+                scaleOut(spring(dampingRatio = 0.82f, stiffness = 380f), targetScale = 0.96f) +
+                    slideOutVertically(spring(dampingRatio = 0.82f, stiffness = 380f)) { it / 16 } + fadeOut(tween(160)),
+        ) {
+            SettingsScreen(
+                player = player,
+                active = settingsOpen,
+                onClose = { settingsOpen = false },
                 onSignIn = { signingIn = true },
                 onSignedOut = { lib.reset(); player.refreshAccountState() },
-                onDismiss = { accountSheet = false },
             )
         }
         if (signingIn) {
@@ -620,7 +651,8 @@ fun YunoApp() {
             PlayerSheet.Quality -> QualitySheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Speed -> SpeedSheet(player, onDismiss = { player.sheet = null })
             PlayerSheet.Chapters -> ChaptersSheet(player, onDismiss = { player.sheet = null })
-            PlayerSheet.Comments -> Unit // a panel inside the player (PlayerScreen)
+            PlayerSheet.Comments, PlayerSheet.Transcript -> Unit // a panel inside the player (PlayerScreen)
+            PlayerSheet.Captions -> CaptionsSheet(player, onDismiss = { player.sheet = null }, onTranscript = { player.sheet = PlayerSheet.Transcript })
             PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
             null -> Unit
         }

@@ -146,6 +146,9 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    /** The open video's captions (Captions.kt). */
+    val captions = CaptionsState(scope) { controller?.currentPosition ?: positionMs }
+
     // ── Signed-in account state for the open video (full sync) ──
     /** Like/subscribe state from the account; null while loading or signed out. */
     var accountState by mutableStateOf<VideoAccountState?>(null)
@@ -204,6 +207,7 @@ class PlayerState(private val scope: CoroutineScope) {
         loading = true
         sheet = null
         comments.clearFor(item.id)
+        captions.clear()
         accountState = null
         inWatchLater = false
         // Local Library history (guest + signed-in backup); YouTube's own history still needs sign-in.
@@ -221,6 +225,7 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onSuccess { d ->
                     Log.i("YunoTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
+                    captions.useTracks(d.captions)
                     // The player takes the video's shape before its first frame arrives.
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
                     // Comments wait for the stream data: their request duplicates the video
@@ -721,6 +726,7 @@ class PlayerState(private val scope: CoroutineScope) {
         error = null
         loading = false
         blankUntilFrame = false
+        captions.clear()
     }
 
     /**
@@ -752,7 +758,7 @@ class PlayerState(private val scope: CoroutineScope) {
         )
         current = item
         loadJob = scope.launch {
-            runCatching { YouTube.details(item.id) }.onSuccess { details = it; current = it.item }
+            runCatching { YouTube.details(item.id) }.onSuccess { details = it; current = it.item; captions.useTracks(it.captions) }
         }
     }
 
@@ -904,7 +910,9 @@ fun rememberPlayerState(): PlayerState {
     return state
 }
 
-enum class PlayerSheet { Quality, Speed, Chapters, Comments, Queue }
+enum class PlayerSheet { Quality, Speed, Chapters, Comments, Queue, Captions, Transcript }
+
+val PlayerSheet?.isPanel: Boolean get() = this == PlayerSheet.Comments || this == PlayerSheet.Transcript
 
 private const val TAG = "Yuno"
 /** Background audio-only kicks in only after this long; quick app switches keep video loaded. */

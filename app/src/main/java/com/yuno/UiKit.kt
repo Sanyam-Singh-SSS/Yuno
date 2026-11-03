@@ -496,8 +496,41 @@ fun metaLine(channel: String, views: Long, uploaded: String?): String =
     listOfNotNull(
         channel.ifBlank { null },
         views.takeIf { it >= 0 }?.let { "${formatCount(it)} views" },
-        uploaded?.ifBlank { null },
+        displayAge(uploaded)?.ifBlank { null },
     ).joinDots()
+
+private val ENGLISH_AGE = Regex("^(?:(streamed(?: live)?|premiered)\\s+)?(\\d+)\\s+(second|minute|hour|day|week|month|year)s?\\s+ago$", RegexOption.IGNORE_CASE)
+
+private fun latinDigits(locale: Locale): android.icu.util.ULocale =
+    android.icu.util.ULocale.forLocale(locale).setKeywordValue("numbers", "latn")
+
+/**
+ * An age as YouTube writes it in English ("3 days ago", "Streamed 2 hours ago", "just now") in the
+ * app's language. Anything else (a date) is shown as it came.
+ */
+fun displayAge(english: String?): String? {
+    if (english == null) return null
+    val text = english.trim()
+    if (AppLanguage.locale.language == "en") return text
+    if (text.equals("just now", ignoreCase = true)) return str(R.string.age_just_now)
+    val m = ENGLISH_AGE.matchEntire(text) ?: return text
+    val unit = when (m.groupValues[3].lowercase()) {
+        "second" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.SECONDS
+        "minute" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.MINUTES
+        "hour" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.HOURS
+        "day" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.DAYS
+        "week" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.WEEKS
+        "month" -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.MONTHS
+        else -> android.icu.text.RelativeDateTimeFormatter.RelativeUnit.YEARS
+    }
+    val age = android.icu.text.RelativeDateTimeFormatter.getInstance(latinDigits(AppLanguage.locale))
+        .format(m.groupValues[2].toDouble(), android.icu.text.RelativeDateTimeFormatter.Direction.LAST, unit)
+    return when {
+        m.groupValues[1].startsWith("streamed", ignoreCase = true) -> str(R.string.age_streamed, age)
+        m.groupValues[1].isNotEmpty() -> str(R.string.age_premiered, age)
+        else -> age
+    }
+}
 
 /**
  * "Channel · 2.4M views · 5 years ago" with each part a bidi isolate (FSI … PDI), so one part's

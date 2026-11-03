@@ -3,6 +3,7 @@ package com.yuno
 import android.provider.Settings
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -43,6 +44,9 @@ object Motion {
     const val ScrubChromeMs = 220
     /** Press-and-hold on the video before temporary 2× playback starts. */
     const val HoldSpeedMs = 580L
+
+    /** Settings page enter/exit (Ledgii / Moodii spatial). */
+    fun <T> MoodiiSpatial(): AnimationSpec<T> = spring(dampingRatio = 0.82f, stiffness = 380f)
 }
 
 /** True when animations are off system-wide; all motion collapses to instant switches. */

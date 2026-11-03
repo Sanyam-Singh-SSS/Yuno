@@ -70,7 +70,9 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
                 .onSuccess { base ->
                     var d = base
                     details = d
-                    if (Account.signedIn) launch { subscribed = runCatching { InnerTube.channelSubscribed(d.id) }.getOrNull() }
+                    if (Account.signedIn) launch {
+                        subscribed = runCatching { InnerTube.channelSubscribed(d.id, d.name, d.avatar) }.getOrNull()
+                    }
                     runCatching { YouTube.channelVideos(d, null) }
                         .onSuccess { p ->
                             videos = p.videos
@@ -160,7 +162,18 @@ fun ChannelScreen(state: ChannelState, contentPadding: PaddingValues, onBack: ()
                             }
                         }
                         Spacer(Modifier.height(14.dp))
-                        ChannelSubscribeButton(state.subscribed == true) { state.toggleSubscribe(onMessage) }
+                        if (Account.signedIn && state.subscribed != null) {
+                            SubscribeWithBell(
+                                subscribed = state.subscribed == true,
+                                channel = BellChannel(d.id, d.name, d.avatar),
+                                onSubscribe = { state.toggleSubscribe(onMessage) },
+                                onMessage = onMessage,
+                                modifier = Modifier.fillMaxWidth(),
+                                wide = true,
+                            )
+                        } else {
+                            ChannelSubscribeButton(state.subscribed == true) { state.toggleSubscribe(onMessage) }
+                        }
                         if (d.description.isNotBlank()) {
                             Spacer(Modifier.height(12.dp))
                             Text(d.description, color = c.onSurfaceVariant, fontSize = 13.5.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)

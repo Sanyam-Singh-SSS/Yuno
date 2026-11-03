@@ -171,19 +171,6 @@ fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () ->
                 Spacer(Modifier.height(20.dp))
                 PillButton("Sign out", { Account.signOut(); onSignedOut(); onDismiss() }, SfIcons.Logout)
             }
-            // Settings live here (Derek's choice): every tab's header has this sheet.
-            Spacer(Modifier.height(28.dp))
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
-                AppearanceSettings()
-            }
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
-                ShortsSettings()
-            }
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.surfaceContainer).padding(18.dp)) {
-                SponsorBlockSettings()
-            }
         }
     }
 }

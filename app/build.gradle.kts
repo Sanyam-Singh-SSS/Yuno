@@ -12,8 +12,8 @@ android {
         applicationId = "com.yuno"
         minSdk = 26
         targetSdk = 36
-        versionCode = 74
-        versionName = "0.5.65"
+        versionCode = 84
+        versionName = "0.5.84"
         buildConfigField("String", "GITHUB_RELEASES_REPO", "\"danielkanan/Yuno\"")
     }
 
@@ -25,6 +25,7 @@ android {
             // Sideloaded personal build: the debug key is fine until there's a reason
             // to distribute it.
             signingConfig = signingConfigs.getByName("debug")
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -47,6 +48,7 @@ android {
     buildFeatures { compose = true; buildConfig = true }
 
     packaging {
+        jniLibs { useLegacyPackaging = true }
         resources {
             excludes += listOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module", "META-INF/DEPENDENCIES")
         }
@@ -87,6 +89,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.guava:guava:33.3.1-android")
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     // Backdrop frost for the liquid-glass nav (Telegram-like Haze).
     implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")

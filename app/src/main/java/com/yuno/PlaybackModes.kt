@@ -1,4 +1,4 @@
-package com.yuno
+﻿package com.yuno
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -21,6 +21,8 @@ object PlaybackSpeed {
     const val MIN = 0.5f
     const val MAX = 3f
     const val STEP = 0.05f
+    /** Holding a finger on the video's right side plays at this, until it lifts. */
+    const val HOLD = 2f
     /** Steps from [MIN] to [MAX]. */
     val LAST_STEP = ((MAX - MIN) / STEP).roundToInt()
 
@@ -90,4 +92,19 @@ object AudioOnly {
         enabled = on
         prefs?.edit()?.putBoolean(KEY, on)?.apply()
     }
+}
+
+/**
+ * Where the open portrait player's controls live (Derek, 2026-10-31; a choice in the account sheet):
+ * in the playback pill the tab bar turns into (PlayerBar.kt, the default since 0.5.34), or on the
+ * video itself (VideoContent's overlay, its bottom edge a playback head with a knob to scrub). On the
+ * video, the tab bar steps down out of the open player's way. Fullscreen has its overlay either way.
+ */
+/** Yuno always keeps playback controls on the video (glass nav stays tabs-only). */
+object PlayerControls {
+    const val inBar: Boolean = false
+
+    fun init(context: Context) = Unit
+
+    fun set(bar: Boolean) = Unit
 }

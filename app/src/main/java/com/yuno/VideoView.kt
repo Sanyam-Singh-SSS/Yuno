@@ -9,6 +9,8 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -43,6 +45,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.material3.CircularProgressIndicator
@@ -330,6 +333,19 @@ fun VideoContent(
                         Modifier.fillMaxSize(),
                     )
                 }
+                if (state.error == null) {
+                    val reduced = rememberReducedMotion()
+                    val captionLift by animateDpAsState(
+                        when {
+                            controlsVisible && interactive -> if (fullscreen) 72.dp else 56.dp
+                            state.askSegment != null -> 50.dp
+                            else -> if (fullscreen) 22.dp else 12.dp
+                        },
+                        if (reduced) tween(0) else spring(dampingRatio = 0.9f, stiffness = 380f),
+                        label = "captionLift",
+                    )
+                    CaptionLayer(state, bottom = captionLift, alpha = { if (scrubbing) 0f else 1f })
+                }
             }
             // Where the burst has got to, while the controls (and their scrubber) are hidden.
             Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).graphicsLayer { alpha = peekAlpha }) {
@@ -430,6 +446,21 @@ fun VideoContent(
                             if (QualityPreference.height == null) "Auto · $quality" else quality,
                             enabled,
                         ) { touched(); state.sheet = PlayerSheet.Quality }
+                    }
+                    if (state.captions.tracks.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        GlassButton(
+                            Icons.Rounded.ClosedCaption,
+                            stringResource(R.string.video_captions),
+                            enabled,
+                            size = 30.dp,
+                            iconSize = 18.dp,
+                            active = state.captions.on,
+                        ) {
+                            touched()
+                            state.captions.turn(true)
+                            state.sheet = PlayerSheet.Captions
+                        }
                     }
                     Spacer(Modifier.width(8.dp))
                     GlassButton(
@@ -1001,7 +1032,7 @@ private fun GlassButton(
                 },
             ),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, description, tint = Color.White, modifier = Modifier.size(iconSize)) }
+    ) { Icon(icon, description, tint = if (active) c.onPrimary else Color.White, modifier = Modifier.size(iconSize)) }
 }
 
 /** A labelled pill in the controls' top row (chapters, speed, quality), the same glass as the buttons. */

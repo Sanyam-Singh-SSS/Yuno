@@ -316,7 +316,26 @@ fun PlayerScreen(
                                 }
                             }
                             }
-                            SubscribeButton(state.accountState?.subscribed == true, onClick = state::toggleSubscribe)
+                            if (Account.signedIn) {
+                                val account = state.accountState
+                                if (account?.subscribed != null) {
+                                    val channelUrl = details?.item?.channelUrl ?: item.channelUrl
+                                    val channelId = account.channelId
+                                        ?: channelUrl?.substringAfter("/channel/", "")?.takeIf { it.startsWith("UC") }
+                                    SubscribeWithBell(
+                                        subscribed = account.subscribed == true,
+                                        channel = channelId?.let {
+                                            BellChannel(it, item.channel.ifBlank { null }, details?.item?.avatar ?: item.avatar)
+                                        },
+                                        onSubscribe = state::toggleSubscribe,
+                                        onMessage = { state.actionMessage = it },
+                                    )
+                                } else {
+                                    SubscribeButton(subscribed = false, onClick = state::toggleSubscribe)
+                                }
+                            } else {
+                                SubscribeButton(subscribed = false, onClick = state::toggleSubscribe)
+                            }
                         }
                         // Speed, quality and audio only live on the video's own controls (VideoView.kt).
                         PlayerActions(state)
@@ -356,13 +375,19 @@ fun PlayerScreen(
         if (state.sheet == PlayerSheet.Comments) {
             val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
             val videoBottom = top + StageTopGap + (screenW - StageSideGap * 2) / state.stageAspect
-            val item = state.details?.item
             CommentsPanel(
                 state.comments,
                 partialTop = videoBottom + 10.dp,
                 onClose = { state.sheet = null },
-                creatorAvatar = item?.avatar,
-                creatorName = item?.channel.orEmpty(),
+            )
+        }
+        if (state.sheet == PlayerSheet.Transcript) {
+            val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+            val videoBottom = top + StageTopGap + (screenW - StageSideGap * 2) / state.stageAspect
+            TranscriptPanel(
+                state,
+                partialTop = videoBottom + 10.dp,
+                onClose = { state.sheet = null },
             )
         }
     }
