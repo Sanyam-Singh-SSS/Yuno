@@ -54,10 +54,10 @@ class InnerTubeParseTest {
     @Test fun sharpenYtcChannelAvatar() {
         val raw = "https://yt3.ggpht.com/ytc/AIdro_n1Ribd7LwdP_qKtqWL3ZDfIgv9M1d6g78VwpHGXVR2Ir4=s6"
         val out = sharpenChannelAvatarUrl(raw, 176)
-        assertTrue(out.contains("=s96"))
-        assertTrue(!out.contains("=s176"))
+        assertTrue(out.contains("googleusercontent.com/ytc/"))
+        assertTrue(out.contains("=s176"))
         val broken = raw.replace("=s6", "=s176")
-        assertTrue(sharpenChannelAvatarUrl(broken, 48).contains("=s96"))
+        assertTrue(sharpenChannelAvatarUrl(broken, 48).contains("=s88"))
     }
 
     @Test fun searchResults() {
