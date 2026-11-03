@@ -381,12 +381,12 @@ fun PlaylistScreen(
     LaunchedEffect(playlist.id) { feed.ensureLoaded() }
     val avatarSeed = remember(channelAvatarSeed) { channelAvatarSeed }
     val listState = rememberLazyListState()
-    val top = pageContentTop()
+    val top = pageBodyTop()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(Modifier.fillMaxSize()) {
         if (feed.videos.isEmpty() && !feed.loading && feed.error == null && !feed.hasMore) {
             Column(Modifier.padding(contentPadding.withTop(top))) {
-                LargePageTitle(playlist.title)
+                LargePageTitle(playlist.title, barAligned = false)
                 EmptyState(SfIcons.VideoLibrary, "Nothing here yet", "Videos you add to this playlist will show up here.")
             }
         } else {
@@ -394,7 +394,7 @@ fun PlaylistScreen(
                 feed,
                 contentPadding.withTop(top),
                 onOpen,
-                header = { item(key = "page-title") { LargePageTitle(playlist.title) } },
+                header = { item(key = "page-title") { LargePageTitle(playlist.title, barAligned = false) } },
                 indicatorTop = topBarHeight(),
                 listState = listState,
                 channelAvatarSeed = avatarSeed,

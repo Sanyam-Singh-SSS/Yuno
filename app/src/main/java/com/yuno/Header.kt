@@ -167,15 +167,17 @@ fun LargePageTitle(
     title: String,
     modifier: Modifier = Modifier,
     fontSize: TextUnit = LargePageTitleFontSize,
+    /** False on overlay pages (playlist, …) that already inset with [pageBodyTop]. */
+    barAligned: Boolean = true,
 ) {
-    val inset = (LargePageTitleBlockHeight - titleCapHeight(fontSize)) / 2
+    val inset = if (barAligned) (LargePageTitleBlockHeight - titleCapHeight(fontSize)) / 2 else 0.dp
     Text(
         text = title,
         modifier = modifier.padding(
             start = PageGutter,
             end = PageGutter,
             top = inset,
-            bottom = inset + LargePageTitleContentGap,
+            bottom = if (barAligned) inset + LargePageTitleContentGap else LargePageTitleContentGap,
         ),
         style = OwnDirectionText.merge(
             TextStyle(
