@@ -625,7 +625,6 @@ fun SearchScreen(
         }
         }
         }
-        PageTopFade()
         }
         PageTopBar(
             onBack = onBack,
