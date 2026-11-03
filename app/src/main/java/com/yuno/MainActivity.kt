@@ -458,6 +458,7 @@ fun YunoApp() {
                 contentPadding,
                 onBack = { openSearch = false },
                 onOpen = player::open,
+                barShown = openSearch,
             )
         }
 
@@ -475,6 +476,7 @@ fun YunoApp() {
                     onBack = { openPlaylist = null },
                     onOpen = player::open,
                     channelAvatarSeed = lib.channels.associate { it.id to it.avatar },
+                    barShown = openPlaylist != null,
                 )
             }
         }

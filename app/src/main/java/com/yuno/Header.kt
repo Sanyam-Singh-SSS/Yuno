@@ -259,6 +259,7 @@ fun PageTopBar(
         }
         return
     }
+    if (!shown) return
     val iconTint = if (glass) glassContentColor() else MaterialTheme.colorScheme.onSurface
     Box(
         Modifier
