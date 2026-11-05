@@ -62,7 +62,7 @@ class FeedState(
         private set
     var error by mutableStateOf<String?>(null)
         private set
-    /** Bumped when a refresh lands; lists scroll back to the top on it. */
+    /** Bumped when a list that was already on screen is replaced (refresh, a new chip). First load does not. */
     var generation by mutableStateOf(0)
         private set
     /** A pull/button refresh is running (the first load shows its own spinner). */
@@ -104,6 +104,7 @@ class FeedState(
     fun selectChip(pick: FeedChip) {
         chip = if (pick.token == null || pick.title == chip?.title) null else pick
         videos = emptyList(); next = null
+        generation++
         load(fresh = false)
     }
 
@@ -113,9 +114,10 @@ class FeedState(
      * a continuation of the plain one, so its first page is the loader's page for its token.
      */
     private fun load(fresh: Boolean) {
+        val replacing = videos.isNotEmpty()
         loaded = true
         loading = true
-        refreshing = videos.isNotEmpty()
+        refreshing = replacing
         error = null
         job?.cancel()
         val pick = chip
@@ -130,7 +132,8 @@ class FeedState(
             if (!isActive) return@launch // a newer load (another chip) took over
             result
                 .onSuccess {
-                    videos = it.videos; next = it.next; generation++
+                    videos = it.videos; next = it.next
+                    if (replacing) generation++
                     landedAt = android.os.SystemClock.elapsedRealtime()
                     if (pick == null) {
                         chips = it.chips
@@ -400,7 +403,8 @@ fun FeedList(
     }
     val created = rememberLazyListState()
     val list = rememberScrollToTop(scrollToTop, listState ?: created)
-    // Fresh content always starts at the top (first load and every refresh).
+    // A refresh or a new chip starts at the top. The first page landing does not,
+    // so scrolling the skeletons is kept when the videos arrive.
     LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
     val nearEnd by remember {
         derivedStateOf {
@@ -425,7 +429,9 @@ fun FeedList(
                     action = { PillButton(stringResource(R.string.ui_try_again), { feed.refresh() }) },
                 )
             }
-            feed.loading && listVideos.isEmpty() -> item { FeedSkeletons() }
+            // One item per card, so a scroll through the placeholders stays at that spot
+            // when the videos take their place. One tall item would clamp back to the top.
+            feed.loading && listVideos.isEmpty() -> items(4) { FeedSkeletons(1) }
             feed.loading || feed.hasMore -> item { FeedSkeletons(1) }
         }
     }

@@ -594,10 +594,12 @@ class SearchState(private val scope: CoroutineScope) {
         submitted = q
         loading = true
         error = null
+        if (results.isNotEmpty()) generation++
+        results = emptyList()
         job?.cancel()
         job = scope.launch {
             runCatching { YouTube.search(q) }
-                .onSuccess { results = it; generation++ }
+                .onSuccess { results = it }
                 .onFailure { error = YouTube.friendlyError(it) }
             loading = false
         }
@@ -655,6 +657,7 @@ fun SearchScreen(
     Box(Modifier.fillMaxSize().background(c.background).overlayTouchBlock()) {
         Box(Modifier.fillMaxSize()) {
         val listShown = showHistory || (draft && state.suggestions.isNotEmpty()) ||
+            (state.loading && state.submitted.isNotEmpty() && state.error == null) ||
             (state.results.isNotEmpty() && state.error == null)
         Box(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = if (listShown) 0.dp else bodyTop)) {
@@ -697,9 +700,6 @@ fun SearchScreen(
                 contentPadding = contentPadding.withTop(bodyTop),
                 onSearch = { state.updateQuery(it); submit() },
             )
-            state.loading && state.results.isEmpty() -> Column(
-                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(contentPadding),
-            ) { FeedSkeletons() }
             state.error != null -> EmptyState(
                 icon = SfIcons.CloudOff,
                 title = "Search didn't load",
@@ -711,20 +711,22 @@ fun SearchScreen(
                 title = "Search without the ads",
                 body = "Results play straight away, with no ads and no sign-in.",
             )
-            state.results.isEmpty() -> EmptyState(
+            state.results.isEmpty() && !state.loading -> EmptyState(
                 icon = SfIcons.History,
                 title = "Nothing found",
                 body = "No videos matched “${state.submitted}”.",
             )
             else -> {
                 val list = rememberScrollToTop(scrollToTop)
+                // A new search starts at the top. The first page arriving does not.
                 LaunchedEffect(state.generation) { list.scrollToItem(0) }
                 // scrollToItem(0) pins this item to the top of the viewport, so the
                 // clearance has to be an item. Content padding would scroll away and
                 // the first thumbnail would sit under the back button.
                 LazyColumn(state = list, contentPadding = contentPadding) {
                     item(key = "top-gap") { Spacer(Modifier.height(bodyTop)) }
-                    items(state.results, key = { it.id }) { video ->
+                    if (state.results.isEmpty()) items(4) { FeedSkeletons(1) }
+                    else items(state.results, key = { it.id }) { video ->
                         VideoCard(video, onClick = { onOpen(video) })
                     }
                 }

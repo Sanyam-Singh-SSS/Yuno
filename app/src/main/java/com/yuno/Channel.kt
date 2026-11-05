@@ -33,7 +33,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -340,10 +339,12 @@ fun ChannelScreen(
                 Icons.Rounded.CloudOff, stringResource(R.string.ui_channel_error_title), state.error.orEmpty(),
                 action = { PillButton(stringResource(R.string.ui_try_again), state::load) },
             ) }
-            d == null -> Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding.withTop(top)),
-            ) { ChannelSkeletons() }
             else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
+                if (d == null) {
+                    item { ChannelSkeletons() }
+                    items(3) { FeedSkeletons(1) }
+                    return@LazyColumn
+                }
                 item(key = ProfileKey) { ChannelProfile(state, d, onMessage) }
                 if (hasTabs) item(key = TabsKey) {
                     UnderlineTabs(tabLabels, tabs.indexOf(current), { pick(tabs[it]) }, TabsRowModifier)

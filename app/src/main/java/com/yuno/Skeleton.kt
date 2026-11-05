@@ -209,8 +209,6 @@ fun ChannelSkeletons() {
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            repeat(3) { VideoCardSkeleton() }
         }
     }
 }
