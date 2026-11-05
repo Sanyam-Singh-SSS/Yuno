@@ -29,10 +29,20 @@ When a Skipii update adds or changes a feature, **port the upstream code** (`com
 | **Thumbnails** | `sharpenFeedThumbnail` + `UiKit.kt` `Thumbnail` styling. |
 | **Shorts look** | Yuno glass rail stays. Drag-to-seek, the double-tap thumb burst, and the progress line are **upstream `Shorts.kt`** (`scrubTo` / `endScrub`, `shortTaps`, `ThumbBurst`, `Line*`), not a rewrite. |
 
+## Derek’s own changes — ask on the next merge
+
+When Derek changes or adds something in Yuno (a layout, a screen, a setting, a behavior), write it here **and** in `docs/yuno-preserve-on-merge.md` in the same turn, without being asked. One line: what changed, and where it lives. Do not file it under **Always keep** or **OK to follow upstream** until he decides.
+
+On an upstream merge, ask only if that update **conflicts with or rewrites** one of these lines. Leave the others alone and do not ask about them. For each one Skipii actually changes, ask whether to **keep** it or **let Skipii replace it**.
+
+- **Keep** — move the line under **Always keep**.
+- **Let Skipii replace it** — drop the line and follow upstream for that spot.
+
 ## Ask Derek each merge
 
 - **Playback / extraction / deps:** `YouTube.kt`, `PlayerFallback.kt`, `PlaybackService.kt`, parsers, Gradle/Media3, ProGuard.
 - **Shorts disk bank:** large `ShortsBank.kt` changes — confirm first.
+- A line under **Derek’s own changes** only when this update conflicts with it or rewrites that spot.
 
 ## OK to follow upstream (unless it breaks “Always keep”)
 
@@ -49,7 +59,7 @@ When a Skipii update adds or changes a feature, **port the upstream code** (`com
 
 ## Merge workflow
 
-1. Read this rule + `docs/yuno-preserve-on-merge.md`.
+1. Read this rule + `docs/yuno-preserve-on-merge.md`. If this update conflicts with or rewrites a line under **Derek’s own changes**, ask Derek before taking Skipii’s version of that spot.
 2. `git merge upstream/main` (or tag); resolve **file-by-file**.
 3. `rg -i "skipii|castii|com\\.skipii|PlayerBar" app/src` — investigate hits; confirm release repo still **Yuno**.
 4. `./gradlew assembleDebug`; `testDebugUnitTest` if parsers changed.

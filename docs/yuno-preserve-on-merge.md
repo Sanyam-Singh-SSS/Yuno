@@ -24,10 +24,20 @@ Edit when you want something new protected. Cursor rule: `.cursor/rules/yuno-ups
 
 - Mini-player ↔ player morph, headers, vignettes, no ripples, `pressable`.
 
+## Derek’s own changes — ask on the next merge
+
+When Derek changes or adds something in Yuno (a layout, a screen, a setting, a behavior), write it here **and** in `.cursor/rules/yuno-upstream-preserve.mdc` in the same turn, without being asked. One line: what changed, and where it lives. Leave it in this list until he decides.
+
+On a later Skipii merge, ask only if that update **conflicts with or rewrites** the change. If Skipii does not touch it, keep it and do not ask. When it does collide, ask: **keep** it, or **let Skipii replace it**?
+
+- **Keep** — move the line into **Look & feel** / **Always keep**.
+- **Let Skipii replace it** — delete the line and take upstream there.
+
 ## Ask Derek each merge
 
 - Playback, extraction, bot-check, SponsorBlock **service**, Media3/NewPipe/Gradle deps.
 - Large Shorts bank changes.
+- A line under **Derek’s own changes** only when this update conflicts with it or rewrites that spot.
 
 ## OK to follow upstream
 
