@@ -47,8 +47,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -58,6 +61,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,13 +86,17 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.runtime.snapshotFlow
 import com.yuno.icons.SfIcons
+import kotlin.math.roundToInt
 
 // ── Home / Subscriptions / Library ─────────────────────────────────────────────
 // Signed in, these show the account's real feeds. Signed out, they explain what signing
@@ -108,29 +116,111 @@ fun HomeScreen(
     // to the account's recommendations after [LibraryData.reset].
     val signedIn = Account.signedIn
     LaunchedEffect(signedIn) { lib.home.ensureLoaded() }
+    val chips = lib.home.chips
+    val chipIndex = feedChipSelectedIndex(chips, lib.home.chip)
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val pagerState = if (chips.size > 1) {
+        rememberPagerState(
+            initialPage = chipIndex.coerceIn(0, chips.lastIndex),
+            pageCount = { chips.size },
+        )
+    } else null
+    if (pagerState != null) {
+        LaunchedEffect(chipIndex) {
+            if (pagerState.currentPage != chipIndex && !pagerState.isScrollInProgress) {
+                pagerState.animateScrollToPage(chipIndex)
+            }
+        }
+        LaunchedEffect(pagerState, chips) {
+            snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { page ->
+                val pick = chips.getOrNull(page) ?: return@collect
+                if (feedChipSelectedIndex(chips, lib.home.chip) != page) {
+                    lib.home.selectChip(pick)
+                }
+            }
+        }
+    }
+    val tabPosition by remember(pagerState) {
+        derivedStateOf { pagerState?.let { it.currentPage + it.currentPageOffsetFraction } }
+    }
+    val tabDragging by remember(pagerState) {
+        derivedStateOf { pagerState?.isScrollInProgress == true }
+    }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
-            FeedList(
+            HomeFeedColumn(
                 lib.home,
                 contentPadding.withTop(pageContentTop()),
                 onOpen,
-                header = {
-                    item(key = "page-title") { LargePageBrandMark() }
-                    if (lib.home.chips.size > 1) {
-                        item(key = "chips") {
-                            HomeChips(lib.home.chips, lib.home.chip) { lib.home.selectChip(it) }
-                        }
-                    }
-                },
+                listState = listState,
                 scrollToTop = scrollToTop,
                 indicatorTop = topBarHeight(),
-                listState = listState,
+                chips = chips,
+                onPickChip = { ch ->
+                    if (pagerState != null) {
+                        val i = chips.indexOf(ch)
+                        if (i >= 0) scope.launch { pagerState.animateScrollToPage(i) }
+                    }
+                    lib.home.selectChip(ch)
+                },
+                tabPosition = tabPosition,
+                tabDragging = tabDragging,
+                chipPagerState = pagerState,
+                chipIndex = chipIndex,
+                chipTargetPage = pagerState?.targetPage ?: chipIndex,
+                chipScrolling = tabDragging,
             )
             PageTopFade(listState)
         }
         PageTopBar { UpdateAction(); HeaderActions(onSearch, onAccount) }
     }
+}
+
+@Composable
+private fun HomeFeedColumn(
+    feed: FeedState,
+    contentPadding: PaddingValues,
+    onOpen: (VideoItem) -> Unit,
+    listState: LazyListState,
+    scrollToTop: Int,
+    indicatorTop: Dp,
+    chips: List<FeedChip>,
+    onPickChip: (FeedChip) -> Unit,
+    tabPosition: Float? = null,
+    tabDragging: Boolean = false,
+    chipPagerState: PagerState? = null,
+    chipIndex: Int = 0,
+    chipTargetPage: Int = 0,
+    chipScrolling: Boolean = false,
+) {
+    FeedList(
+        feed,
+        contentPadding,
+        onOpen,
+        header = {
+            item(key = "page-title") { LargePageBrandMark() }
+            if (chips.size > 1) {
+                item(key = "chips") {
+                    HomeChips(
+                        chips,
+                        feed.chip,
+                        onPickChip,
+                        tabPosition = tabPosition,
+                        tabDragging = tabDragging,
+                    )
+                }
+            }
+        },
+        scrollToTop = scrollToTop,
+        indicatorTop = indicatorTop,
+        listState = listState,
+        chipPagerState = chipPagerState,
+        chips = chips,
+        chipIndex = chipIndex,
+        chipTargetPage = chipTargetPage,
+        chipScrolling = chipScrolling,
+    )
 }
 
 @Composable
@@ -200,7 +290,14 @@ fun SubscriptionsScreen(
  * to. Home's categories and a channel's tabs.
  */
 @Composable
-fun UnderlineTabs(labels: List<String>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun UnderlineTabs(
+    labels: List<String>,
+    selected: Int,
+    onPick: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    tabPosition: Float? = null,
+    tabDragging: Boolean = false,
+) {
     val c = MaterialTheme.colorScheme
     val reduced = rememberReducedMotion()
     val density = LocalDensity.current
@@ -209,12 +306,29 @@ fun UnderlineTabs(labels: List<String>, selected: Int, onPick: (Int) -> Unit, mo
     val barLeft = remember { Animatable(0f) }
     val barWidth = remember { Animatable(0f) }
     var barShown by remember { mutableStateOf(false) }
-    val target = spots[selected]
-    LaunchedEffect(target) {
-        val (left, width) = target ?: return@LaunchedEffect
-        val w = maxOf(width * ChipBarShare, with(density) { ChipBarMin.toPx() })
-        val l = left + (width - w) / 2
-        if (!barShown || reduced) {
+    val position = (tabPosition ?: selected.toFloat()).coerceIn(0f, labels.lastIndex.coerceAtLeast(0).toFloat())
+    val highlight = if (tabDragging) position.roundToInt().coerceIn(0, labels.lastIndex) else selected
+    fun barAt(pos: Float): Pair<Float, Float>? {
+        if (labels.isEmpty()) return null
+        val max = labels.lastIndex
+        val p = pos.coerceIn(0f, max.toFloat())
+        val i = p.toInt().coerceIn(0, max)
+        val frac = p - i
+        fun one(index: Int): Pair<Float, Float>? {
+            val (left, width) = spots[index] ?: return null
+            val w = maxOf(width * ChipBarShare, with(density) { ChipBarMin.toPx() })
+            val l = left + (width - w) / 2
+            return l to w
+        }
+        val a = one(i) ?: return null
+        if (frac <= 0f || i >= max) return a
+        val b = one(i + 1) ?: return a
+        return a.first + (b.first - a.first) * frac to a.second + (b.second - a.second) * frac
+    }
+    LaunchedEffect(position, tabDragging, reduced, spots[highlight], spots.get(highlight + 1)) {
+        val target = barAt(position) ?: return@LaunchedEffect
+        val (l, w) = target
+        if (!barShown || reduced || tabDragging) {
             barLeft.snapTo(l); barWidth.snapTo(w); barShown = true
             return@LaunchedEffect
         }
@@ -222,8 +336,8 @@ fun UnderlineTabs(labels: List<String>, selected: Int, onPick: (Int) -> Unit, mo
         launch { barLeft.animateTo(l, spec) }
         barWidth.animateTo(w, spec)
     }
-    LaunchedEffect(selected) {
-        val (left, width) = spots[selected] ?: return@LaunchedEffect
+    LaunchedEffect(highlight) {
+        val (left, width) = spots[highlight] ?: return@LaunchedEffect
         val edge = with(density) { ChipRowPadding.toPx() }
         val x = left + edge
         val view = scroll.viewportSize
@@ -269,7 +383,7 @@ fun UnderlineTabs(labels: List<String>, selected: Int, onPick: (Int) -> Unit, mo
                 },
         ) {
             labels.forEachIndexed { i, label ->
-                val on = i == selected
+                val on = i == highlight
                 val pad = with(density) { ChipWordPadding.toPx() }
                 val fg by animateColorAsState(if (on) c.primary else c.onSurfaceVariant, tween(if (reduced) 0 else 220), label = "chipFg")
                 Box(
@@ -303,9 +417,22 @@ private val ChipBarMin = 18.dp
 private val ChipBarHeight = 4.dp
 
 @Composable
-private fun HomeChips(chips: List<FeedChip>, chosen: FeedChip?, onPick: (FeedChip) -> Unit) {
-    val selected = chips.indexOfFirst { chosen?.let { ch -> ch.title == it.title } ?: (it.token == null) }
-    UnderlineTabs(chips.map { it.title }, selected, { onPick(chips[it]) }, Modifier.padding(top = 2.dp, bottom = 10.dp))
+private fun HomeChips(
+    chips: List<FeedChip>,
+    chosen: FeedChip?,
+    onPick: (FeedChip) -> Unit,
+    tabPosition: Float? = null,
+    tabDragging: Boolean = false,
+) {
+    val selected = feedChipSelectedIndex(chips, chosen)
+    UnderlineTabs(
+        chips.map { it.title },
+        selected,
+        { onPick(chips[it]) },
+        Modifier.padding(top = 2.dp, bottom = 10.dp),
+        tabPosition = tabPosition,
+        tabDragging = tabDragging,
+    )
 }
 
 @Composable

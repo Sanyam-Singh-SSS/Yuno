@@ -33,6 +33,8 @@ On a later Skipii merge, ask only if that update **conflicts with or rewrites** 
 - **Keep** — move the line into **Look & feel** / **Always keep**.
 - **Let Skipii replace it** — delete the line and take upstream there.
 
+- **Home category chips:** horizontal pager on the feed (swipe between chips like tabs); underline indicator tracks finger position (`Screens.kt` / `Feeds.kt` chip snapshots). Only the **video grid** swipes; wordmark and chip row stay in the main list.
+
 ## Ask on each merge
 
 - Playback, extraction, bot-check, SponsorBlock **service**, Media3/NewPipe/Gradle deps.
