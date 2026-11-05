@@ -64,6 +64,12 @@ data class VideoItem(
 @Immutable
 data class CardFeedback(val notInterested: String?, val dontRecommend: String?)
 
+fun VideoItem.channelId(): String? =
+    channelUrl?.substringAfter("/channel/", "")?.substringBefore('?')?.takeIf { it.startsWith("UC") && it.length > 2 }
+
+fun VideoItem.fromChannel(ref: ChannelRef): Boolean =
+    channelId() == ref.id || channel.equals(ref.name, ignoreCase = true)
+
 @Immutable
 data class VideoDetails(
     val item: VideoItem,
@@ -175,6 +181,12 @@ object YouTube {
             .mapNotNull { it.toVideoItem() }
     }
 
+    suspend fun searchSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isEmpty()) emptyList()
+        else service.suggestionExtractor.suggestionList(q)
+    }
+
     /**
      * [wait] false: no quiet retries through a bot check ([BotCheck.withoutWaiting]) — Shorts
      * would rather move on than hold a short on a spinner for up to half a minute.
@@ -196,7 +208,7 @@ object YouTube {
                 title = info.name,
                 channel = info.uploaderName.orEmpty(),
                 channelUrl = info.uploaderUrl,
-                thumbnail = info.thumbnails.bestUrl(),
+                thumbnail = sharpenFeedThumbnail(info.thumbnails.bestUrl(), id),
                 avatar = info.uploaderAvatars.bestUrl(targetWidth = 96),
                 durationSec = info.duration,
                 views = info.viewCount,
@@ -255,7 +267,7 @@ object YouTube {
             title = name,
             channel = uploaderName.orEmpty(),
             channelUrl = uploaderUrl,
-            thumbnail = thumbnails.bestUrl(),
+            thumbnail = sharpenFeedThumbnail(thumbnails.bestUrl(), id),
             avatar = uploaderAvatars.bestUrl(targetWidth = 96),
             durationSec = duration,
             views = viewCount,
@@ -470,7 +482,7 @@ object QualityPreference {
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
-        height = prefs?.getInt(KEY, 0)?.takeIf { it > 0 }
+        height = prefs?.getInt(KEY, 0)?.takeIf { it > 0 }?.takeIf { it in QUALITY_LADDER }
     }
 
     fun set(value: Int?) {
@@ -478,6 +490,25 @@ object QualityPreference {
         prefs?.edit()?.putInt(KEY, value ?: 0)?.apply()
     }
 }
+
+/** Standard rungs shown in the quality sheet (matches YouTube's labels). */
+val QUALITY_LADDER = intArrayOf(144, 240, 360, 480, 720, 1080, 1440, 2160, 4320)
+
+/**
+ * Label tier for a stream: 16:9 and taller uses pixel height; ultrawide uses the equivalent
+ * 16:9 height from width (3840×1634 → 2160p, 1920×818 → 1080p).
+ */
+fun qualityTier(width: Int, height: Int): Int {
+    if (height <= 0) return 0
+    val basis = if (width > 0 && width.toFloat() / height > 16f / 9f + 0.02f) {
+        width * 9 / 16
+    } else {
+        height
+    }
+    return QUALITY_LADDER.minByOrNull { abs(it - basis) } ?: basis
+}
+
+private fun VideoStream.tier() = qualityTier(width, height)
 
 /** Chooses which of YouTube's many streams to play. */
 object StreamSelection {
@@ -546,3 +577,74 @@ object StreamSelection {
         .distinct()
         .sortedDescending()
 }
+
+// ── Feed thumbnails ────────────────────────────────────────────────────────────
+
+private val YT_VIDEO_ID_IN_THUMB = Regex("""i\.ytimg\.com/vi/([\w-]{11})/""")
+
+fun ytVideoIdFromThumbUrl(url: String): String? = YT_VIDEO_ID_IN_THUMB.find(url)?.groupValues?.getOrNull(1)
+
+fun isLowRungYtimgUrl(url: String): Boolean {
+    val path = url.substringBefore('?')
+    return "/hqdefault" in path || "/mqdefault" in path || "/default.jpg" in path
+}
+
+fun ytimgThumbnailWidth(url: String): Int {
+    Regex("=w(\\d+)").find(url)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+    return when {
+        "maxresdefault" in url -> 1280
+        "sddefault" in url -> 640
+        "hqdefault" in url -> 480
+        "mqdefault" in url -> 320
+        else -> 0
+    }
+}
+
+fun feedThumbnailUrl(videoId: String): String = "https://i.ytimg.com/vi/$videoId/sddefault.jpg"
+
+fun sharpenFeedThumbnail(apiUrl: String?, videoId: String): String {
+    val api = apiUrl?.trim()?.ifBlank { null }
+    if (api != null && isLowRungYtimgUrl(api)) return feedThumbnailUrl(videoId)
+    if (api != null && ytimgThumbnailWidth(api) >= 720) return api
+    if (api != null && ("googleusercontent.com" in api || "ggpht.com" in api)) {
+        return upscaleGgphtThumbnail(api, 1280)
+    }
+    return feedThumbnailUrl(videoId)
+}
+
+fun channelAvatarEdgePx(url: String): Int =
+    Regex("=s(\\d+)").find(url)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+
+fun normalizeChannelAvatarUrl(url: String): String {
+    if ("/ytc/" !in url || "googleusercontent.com" in url) return url
+    val id = url.substringAfter("/ytc/").substringBefore("=").substringBefore("?").ifBlank { return url }
+    return "https://yt3.googleusercontent.com/ytc/$id=s88-c-k-c0x00ffffff-no-rj"
+}
+
+fun sharpenChannelAvatarUrl(url: String, minEdgePx: Int): String {
+    val normalized = normalizeChannelAvatarUrl(url)
+    val m = Regex("=s(\\d+)").find(normalized) ?: return normalized
+    val current = m.groupValues[1].toIntOrNull() ?: return normalized
+    if ("/ytc/" in normalized && current > 96 && "googleusercontent.com" !in normalized) {
+        return normalized.replace(Regex("=s\\d+"), "=s96")
+    }
+    if (current >= minEdgePx) return normalized
+    val ceiling = if ("/ytc/" in normalized && "googleusercontent.com" !in normalized) 96 else 800
+    val edge = minOf(minEdgePx, ceiling).coerceAtLeast(current)
+    return normalized.replace(Regex("=s\\d+"), "=s$edge")
+}
+
+internal fun upscaleGgphtThumbnail(url: String, targetWidth: Int): String {
+    val current = ytimgThumbnailWidth(url)
+    if (current >= targetWidth) return url
+    val height = targetWidth * 9 / 16
+    return if ("=w" in url) {
+        url.replace(Regex("=w\\d+-h\\d+"), "=w$targetWidth-h$height")
+    } else {
+        "$url=w$targetWidth-h$height"
+    }
+}
+
+fun VideoItem.feedAvatar(): String? =
+    avatar?.let(::normalizeChannelAvatarUrl)
+        ?: channelId()?.let { ChannelAvatars.known[it] }

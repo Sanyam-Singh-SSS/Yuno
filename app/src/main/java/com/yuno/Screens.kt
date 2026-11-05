@@ -1,8 +1,29 @@
 package com.yuno
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyRow
@@ -94,7 +115,14 @@ fun HomeScreen(
                 lib.home,
                 contentPadding.withTop(pageContentTop()),
                 onOpen,
-                header = { item(key = "page-title") { LargePageBrandMark() } },
+                header = {
+                    item(key = "page-title") { LargePageBrandMark() }
+                    if (lib.home.chips.size > 1) {
+                        item(key = "chips") {
+                            HomeChips(lib.home.chips, lib.home.chip) { lib.home.selectChip(it) }
+                        }
+                    }
+                },
                 scrollToTop = scrollToTop,
                 indicatorTop = topBarHeight(),
                 listState = listState,
@@ -116,70 +144,37 @@ fun SubscriptionsScreen(
     scrollToTop: Int = 0,
 ) {
     val signedIn = Account.signedIn
-    var selectedChannelId by remember { mutableStateOf<String?>(null) }
+    val openChannel = LocalChannelOpener.current
     LaunchedEffect(signedIn) {
         if (signedIn) {
             lib.subscriptions.ensureLoaded()
             if (lib.channels.isEmpty()) lib.loadChannels()
-        } else {
-            selectedChannelId = null
         }
     }
-    LaunchedEffect(scrollToTop) { selectedChannelId = null }
     val listState = rememberLazyListState()
-    val selectedChannel = remember(selectedChannelId, lib.channels) {
-        selectedChannelId?.let { id -> lib.channels.find { it.id == id } }
-    }
-    val filteredVideos = remember(lib.subscriptions.videos, selectedChannel) {
-        val ch = selectedChannel ?: return@remember null
-        lib.subscriptions.videos.filter { it.fromChannel(ch) }
-    }
     val top = pageContentTop()
     val showStrip = signedIn && lib.channels.isNotEmpty()
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize()) {
         if (signedIn) {
-            when {
-                selectedChannel != null && filteredVideos.isNullOrEmpty() && !lib.subscriptions.loading -> {
-                    Column(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
-                        LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize)
-                        if (showStrip) {
-                            SubscriptionsChannelStrip(
-                                channels = lib.channels,
-                                selectedId = selectedChannelId,
-                                onSelect = { id -> selectedChannelId = id },
-                            )
-                        }
-                        EmptyState(
-                            icon = SfIcons.Subscriptions,
-                            title = "Nothing recent",
-                            body = "No new uploads from ${selectedChannel.name} in this feed yet.",
-                        )
-                    }
-                }
-                else -> FeedList(
-                    lib.subscriptions,
-                    contentPadding.withTop(top),
-                    onOpen,
-                    header = {
-                        item(key = "page-title") { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
-                        if (showStrip) {
-                            item(key = "channels") {
-                                SubscriptionsChannelStrip(
-                                    channels = lib.channels,
-                                    selectedId = selectedChannelId,
-                                    onSelect = { id -> selectedChannelId = id },
-                                )
+            FeedList(
+                lib.subscriptions,
+                contentPadding.withTop(top),
+                onOpen,
+                header = {
+                    item(key = "page-title") { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
+                    if (showStrip) {
+                        item(key = "channels") {
+                            SubscriptionsChannelStrip(channels = lib.channels) { ch ->
+                                openChannel("https://www.youtube.com/channel/${ch.id}")
                             }
                         }
-                    },
-                    scrollToTop = scrollToTop,
-                    indicatorTop = topBarHeight(),
-                    listState = listState,
-                    videos = filteredVideos,
-                    filterScrollKey = selectedChannelId,
-                )
-            }
+                    }
+                },
+                scrollToTop = scrollToTop,
+                indicatorTop = topBarHeight(),
+                listState = listState,
+            )
         } else {
             LazyColumn(state = listState, contentPadding = contentPadding.withTop(top)) {
                 item { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
@@ -199,11 +194,124 @@ fun SubscriptionsScreen(
     }
 }
 
+/**
+ * Words in a row that scrolls, the [selected] one primary and heavier with a short rounded bar
+ * springing under it from the last pick; the row fades out at whichever edge has more to scroll
+ * to. Home's categories and a channel's tabs.
+ */
+@Composable
+fun UnderlineTabs(labels: List<String>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    val reduced = rememberReducedMotion()
+    val density = LocalDensity.current
+    val scroll = rememberScrollState()
+    val spots = remember(labels) { mutableStateMapOf<Int, Pair<Float, Float>>() }
+    val barLeft = remember { Animatable(0f) }
+    val barWidth = remember { Animatable(0f) }
+    var barShown by remember { mutableStateOf(false) }
+    val target = spots[selected]
+    LaunchedEffect(target) {
+        val (left, width) = target ?: return@LaunchedEffect
+        val w = maxOf(width * ChipBarShare, with(density) { ChipBarMin.toPx() })
+        val l = left + (width - w) / 2
+        if (!barShown || reduced) {
+            barLeft.snapTo(l); barWidth.snapTo(w); barShown = true
+            return@LaunchedEffect
+        }
+        val spec = spring<Float>(dampingRatio = 0.62f, stiffness = 450f)
+        launch { barLeft.animateTo(l, spec) }
+        barWidth.animateTo(w, spec)
+    }
+    LaunchedEffect(selected) {
+        val (left, width) = spots[selected] ?: return@LaunchedEffect
+        val edge = with(density) { ChipRowPadding.toPx() }
+        val x = left + edge
+        val view = scroll.viewportSize
+        if (x - edge < scroll.value || x + width + edge > scroll.value + view) {
+            val to = (x + width / 2 - view / 2f).toInt()
+            if (reduced) scroll.scrollTo(to) else scroll.animateScrollTo(to)
+        }
+    }
+    val fade = with(density) { ChipRowFade.toPx() }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val leftFade = (scroll.value / fade).coerceIn(0f, 1f)
+                val rightFade = ((scroll.maxValue - scroll.value) / fade).coerceIn(0f, 1f)
+                val w = size.width
+                drawRect(
+                    Brush.horizontalGradient(
+                        0f to Color.Black.copy(alpha = 1f - leftFade),
+                        (fade / w) to Color.Black,
+                        (1f - fade / w) to Color.Black,
+                        1f to Color.Black.copy(alpha = 1f - rightFade),
+                    ),
+                    blendMode = BlendMode.DstIn,
+                )
+            },
+    ) {
+        Row(
+            Modifier
+                .horizontalScroll(scroll)
+                .padding(horizontal = ChipRowPadding)
+                .drawBehind {
+                    if (!barShown) return@drawBehind
+                    val h = ChipBarHeight.toPx()
+                    drawRoundRect(
+                        c.primary,
+                        topLeft = Offset(barLeft.value, size.height - h),
+                        size = Size(barWidth.value, h),
+                        cornerRadius = CornerRadius(h / 2),
+                    )
+                },
+        ) {
+            labels.forEachIndexed { i, label ->
+                val on = i == selected
+                val pad = with(density) { ChipWordPadding.toPx() }
+                val fg by animateColorAsState(if (on) c.primary else c.onSurfaceVariant, tween(if (reduced) 0 else 220), label = "chipFg")
+                Box(
+                    Modifier
+                        .onPlaced { spots[i] = it.positionInParent().x + pad to it.size.width - 2 * pad }
+                        .pressable(onClick = { onPick(i) })
+                        .height(ChipRowHeight)
+                        .padding(horizontal = ChipWordPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        color = fg,
+                        fontWeight = if (on) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val ChipRowPadding = 9.dp
+private val ChipWordPadding = 11.dp
+private val ChipRowHeight = 40.dp
+private val ChipRowFade = 28.dp
+private const val ChipBarShare = 0.6f
+private val ChipBarMin = 18.dp
+private val ChipBarHeight = 4.dp
+
+@Composable
+private fun HomeChips(chips: List<FeedChip>, chosen: FeedChip?, onPick: (FeedChip) -> Unit) {
+    val selected = chips.indexOfFirst { chosen?.let { ch -> ch.title == it.title } ?: (it.token == null) }
+    UnderlineTabs(chips.map { it.title }, selected, { onPick(chips[it]) }, Modifier.padding(top = 2.dp, bottom = 10.dp))
+}
+
 @Composable
 private fun SubscriptionsChannelStrip(
     channels: List<ChannelRef>,
-    selectedId: String?,
-    onSelect: (String?) -> Unit,
+    onOpen: (ChannelRef) -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
     LazyRow(
@@ -212,14 +320,13 @@ private fun SubscriptionsChannelStrip(
         modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
     ) {
         items(channels, key = { it.id }) { ch ->
-            val selected = ch.id == selectedId
             Column(
                 Modifier
                     .width(68.dp)
-                    .pressable { onSelect(if (selected) null else ch.id) },
+                    .pressable { onOpen(ch) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ChannelAvatar(ch.avatar, ch.name, size = 56, selected = selected, ringSlot = true)
+                ChannelAvatar(ch.avatar, ch.name, size = 56, selected = false, ringSlot = true)
                 Spacer(Modifier.height(6.dp))
                 FadingLine(
                     text = ch.name,

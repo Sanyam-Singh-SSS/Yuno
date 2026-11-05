@@ -25,6 +25,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -234,6 +235,8 @@ class LibraryData(scope: CoroutineScope, context: Context) {
                 .onFailure { channelsJob = null } // the next look at the tab tries again
         }
     }
+
+    fun loadChannels() = ensureChannels()
     fun loadPlaylists() = scope.launch { runCatching { InnerTube.playlists() }.onSuccess { playlists = it } }
 
     /**
@@ -297,8 +300,7 @@ class LibraryData(scope: CoroutineScope, context: Context) {
  * tab never scrolls it.
  */
 @Composable
-fun rememberScrollToTop(signal: Int): LazyListState {
-    val state = rememberLazyListState()
+fun rememberScrollToTop(signal: Int, state: LazyListState = rememberLazyListState()): LazyListState {
     val initial = remember { signal }
     LaunchedEffect(signal) { if (signal != initial) state.animateScrollToItem(0) }
     return state
@@ -383,27 +385,41 @@ fun FeedList(
     indicatorTop: Dp = 0.dp,
     /** A card of its own in a grid's second spot (wide windows only). */
     gridExtra: (@Composable (Modifier) -> Unit)? = null,
+    /** Shared with the page so a fade can follow this list. Created here when omitted. */
+    listState: LazyListState? = null,
+    /** When set, shown instead of [FeedState.videos] (e.g. subscriptions channel filter). */
+    videos: List<VideoItem>? = null,
+    /** Scrolls the list to the top when this changes (e.g. subscriptions channel pick). */
+    filterScrollKey: Any? = null,
+    /** Subscription channel avatars to avoid extra lookups on playlist rows. */
+    channelAvatarSeed: Map<String, String?> = emptyMap(),
 ) {
     val c = MaterialTheme.colorScheme
-    val list = rememberScrollToTop(scrollToTop)
+    val listVideos = videos ?: feed.videos
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(listVideos, channelAvatarSeed) {
+        ChannelAvatars.resolve(scope, listVideos, channelAvatarSeed)
+    }
+    val created = rememberLazyListState()
+    val list = rememberScrollToTop(scrollToTop, listState ?: created)
     // Fresh content always starts at the top (first load and every refresh).
-    LaunchedEffect(feed.generation) { list.scrollToItem(0) }
+    LaunchedEffect(feed.generation, filterScrollKey) { list.scrollToItem(0) }
     val nearEnd by remember {
         derivedStateOf {
             val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             last >= list.layoutInfo.totalItemsCount - 4
         }
     }
-    LaunchedEffect(nearEnd, feed.videos.size) { if (nearEnd && feed.videos.isNotEmpty()) feed.loadMore() }
+    LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
     val columns = gridColumns()
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
     LazyColumn(state = list, contentPadding = contentPadding) {
         header()
-        videoCards(feed.videos, columns, onOpen, extra = gridExtra)
+        videoCards(listVideos, columns, onOpen, extra = gridExtra)
         when {
             // No keys on these trailing items: a keyed loader at index 0 makes LazyColumn
             // hold it in view when videos arrive above it, landing at the bottom of the page.
-            feed.error != null && feed.videos.isEmpty() -> item {
+            feed.error != null && listVideos.isEmpty() -> item {
                 EmptyState(
                     icon = Icons.Rounded.CloudOff,
                     title = stringResource(R.string.ui_feed_error_title),

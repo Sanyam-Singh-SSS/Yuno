@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.content.Intent
 import android.net.Uri
@@ -78,6 +78,8 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -93,6 +95,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -137,8 +140,10 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.Normalizer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Settings (Derek, 2026-11-02: example 4 "Big title that folds" in docs/design/settings-merged.html, Ledgii's
@@ -211,7 +216,7 @@ fun SettingsScreen(
 
     AnimatedContent(
         targetState = page,
-        modifier = Modifier.fillMaxSize().background(c.surface),
+        modifier = Modifier.fillMaxSize().background(c.background),
         transitionSpec = {
             // Ledgii's shared axis X: in from 1/8 of the width while fading, out a little the other way.
             val dir = if (targetState != null) 1 else -1
@@ -305,7 +310,7 @@ private fun FoldingPage(
         find.topPx = with(density) { (statusTop + BarHeight + 48.dp).toPx() }
         LaunchedEffect(find) { find.reach() }
     }
-    Box(Modifier.fillMaxSize().background(c.surface)) {
+    Box(Modifier.fillMaxSize().background(c.background)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -348,7 +353,7 @@ private fun FoldingPage(
             Spacer(Modifier.height(36.dp))
         }
         // Under the folded bar the page fades out instead of cutting off (the tabs' top vignette).
-        val page = c.surface
+        val page = c.background
         val vignette = remember(page) { vignetteBrush(page, opaqueAtTop = true) }
         Box(
             Modifier
@@ -362,7 +367,7 @@ private fun FoldingPage(
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(c.surface)
+                .background(c.background)
                 .padding(top = statusTop)
                 .height(BarHeight)
                 .padding(start = 6.dp, end = 8.dp),
@@ -763,6 +768,9 @@ private fun summaryOf(page: SettingsPage): String = when (page) {
     SettingsPage.Playback -> listOfNotNull(
         if (PlaybackSpeed.remember) stringResource(R.string.settings_speed_kept_summary, PlaybackSpeed.label(PlaybackSpeed.saved))
         else stringResource(R.string.settings_speed_per_video),
+        stringResource(R.string.settings_seek_step_summary, SeekStep.seconds.toString()),
+        if (FullscreenZoom.fill) stringResource(R.string.settings_zoom_fill_summary) else null,
+        if (AutoPip.on) stringResource(R.string.settings_auto_pip_title) else null,
         if (AudioOnly.enabled) stringResource(R.string.bar_audio_only) else null,
     ).joinDots()
     SettingsPage.Captions -> listOf(captionShowLabel(CaptionSettings.show), stringResource(CaptionSettings.look.labelRes)).joinDots()
@@ -828,6 +836,11 @@ private fun entries(): List<Entry> = buildList {
     SettingsPage.entries.forEach { add(Entry(it, null, str(it.titleRes), emptyList())) }
     val pb = SettingsPage.Playback
     add(Entry(pb, "speed", str(R.string.settings_speed_remember_title), listOf(str(R.string.settings_speed_keep), str(R.string.bar_speed_remember))))
+    add(Entry(pb, "music", str(R.string.settings_music_normal_title), listOf(str(R.string.settings_music_normal_line))))
+    add(Entry(pb, "seek", str(R.string.settings_seek_step_title), listOf(str(R.string.settings_seek_step_line))))
+    add(Entry(pb, "chapters", str(R.string.settings_chapters_open_title), listOf(str(R.string.settings_chapters_open_line))))
+    add(Entry(pb, "pip", str(R.string.settings_auto_pip_title), listOf(str(R.string.settings_auto_pip_line))))
+    add(Entry(pb, "zoom", str(R.string.settings_zoom_fill_title), listOf(str(R.string.settings_zoom_fill_on), str(R.string.settings_zoom_fill_off))))
     add(Entry(pb, "audio", str(R.string.bar_audio_only), listOf(str(R.string.settings_audio_only_line))))
     val cc = SettingsPage.Captions
     add(Entry(cc, "show", str(R.string.captions_show), listOf(str(R.string.captions_show_never), str(R.string.captions_show_always))))
@@ -1093,8 +1106,36 @@ private fun Note(text: String) {
 
 @Composable
 private fun PlaybackPage(player: PlayerState) {
+    val pipSupported = LocalPictureInPicture.current?.supported != false
     Spacer(Modifier.height(14.dp))
-    Joined(2) { i, shape ->
+    Joined(if (pipSupported) 3 else 2) { i, shape ->
+        when (i) {
+            0 -> ChipsSetting(
+                "seek", shape,
+                stringResource(R.string.settings_seek_step_title),
+                stringResource(R.string.settings_seek_step_line),
+                SeekStep.choices.map { it to stringResource(R.string.settings_seconds_short, it.toString()) },
+                SeekStep.seconds,
+                icon = seekIcon(forward = true),
+            ) { SeekStep.set(it) }
+            1 -> SwitchSetting(
+                "chapters", shape,
+                stringResource(R.string.settings_chapters_open_title),
+                stringResource(R.string.settings_chapters_open_line),
+                ChaptersStayOpen.on,
+                icon = Icons.AutoMirrored.Rounded.FormatListBulleted,
+            ) { ChaptersStayOpen.set(it) }
+            else -> SwitchSetting(
+                "pip", shape,
+                stringResource(R.string.settings_auto_pip_title),
+                stringResource(R.string.settings_auto_pip_line),
+                AutoPip.on,
+                icon = Icons.Rounded.PictureInPictureAlt,
+            ) { AutoPip.set(it) }
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    Joined(4) { i, shape ->
         when (i) {
             0 -> SwitchSetting(
                 "speed", shape,
@@ -1379,8 +1420,10 @@ private fun AccountPage(onSignIn: () -> Unit, onSignedOut: () -> Unit) {
 private fun AboutPage(player: PlayerState) {
     val context = LocalContext.current
     var whatsNew by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val shareTitle = stringResource(R.string.settings_crash_share)
     Spacer(Modifier.height(14.dp))
-    Joined(2) { i, shape ->
+    Joined(3) { i, shape ->
         if (i == 0) {
             LinkSetting("version", shape, Icons.Rounded.SystemUpdateAlt, stringResource(R.string.settings_version, BuildConfig.VERSION_NAME), updateStatus()) {
                 if (AppUpdate.available != null) whatsNew = true else AppUpdate.checkNow()

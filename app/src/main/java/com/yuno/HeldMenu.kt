@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -274,6 +275,19 @@ fun VideoHeldMenu(
                 MenuRow(SfIcons.Share, "Share", open) {
                     shareLink(context, "https://youtu.be/${menuVideo.id}", menuVideo.title)
                     onDismiss()
+                }
+                if (menuVideo.feedback?.notInterested != null || menuVideo.feedback?.dontRecommend != null) {
+                    MenuSeparator(hairline)
+                }
+                menuVideo.feedback?.notInterested?.let {
+                    MenuRow(SfIcons.Block, stringResource(R.string.ui_not_interested), open) {
+                        player.notInterested(menuVideo); onDismiss()
+                    }
+                }
+                menuVideo.feedback?.dontRecommend?.let {
+                    MenuRow(SfIcons.Block, stringResource(R.string.ui_dont_recommend_channel), open) {
+                        player.dontRecommendChannel(menuVideo); onDismiss()
+                    }
                 }
             }
         },

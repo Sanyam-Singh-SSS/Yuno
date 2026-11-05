@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

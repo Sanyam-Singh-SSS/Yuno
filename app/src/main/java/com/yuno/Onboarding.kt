@@ -66,7 +66,7 @@ object Onboarding {
 
     fun finish() {
         completed = true
-        prefs?.edit()?.putBoolean("completed", true)?.apply()
+        prefs?.edit()?.putBoolean("completed", true)?.commit()
     }
 }
 

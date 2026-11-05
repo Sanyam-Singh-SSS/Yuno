@@ -301,7 +301,7 @@ fun ChannelScreen(
     }
     val tabLabels = tabs.map { tabLabel(it) }
 
-    Box(Modifier.fillMaxSize().background(c.surface)) {
+    Box(Modifier.fillMaxSize().background(c.background)) {
     CollapsingHeaderLayout(
         header = {
         Row(
@@ -322,7 +322,7 @@ fun ChannelScreen(
         pinned = if (!hasTabs) null else { headerBottom ->
             val pinned by remember(statusPx) { derivedStateOf { tabsAbove(maxOf(headerBottom(), statusPx)) } }
             if (pinned) {
-                val page = c.surface
+                val page = c.background
                 val fade = remember(page) { vignetteBrush(page, opaqueAtTop = true) }
                 Column(Modifier.fillMaxWidth().offset { IntOffset(0, (maxOf(headerBottom(), statusPx) - statusPx).roundToInt()) }) {
                     Box(Modifier.fillMaxWidth().background(page).padding(top = statusTop)) {

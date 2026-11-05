@@ -1,6 +1,8 @@
 package com.yuno
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseInCubic
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,22 +31,31 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -51,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yuno.icons.SfIcons
@@ -59,6 +72,78 @@ import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
+import kotlinx.coroutines.launch
+
+/**
+ * A page whose header scrolls away: banner, profile, tabs. [pinned] stays under the status bar
+ * (tab row with a top fade). [content] receives the header height as top padding.
+ */
+@Composable
+fun CollapsingHeaderLayout(
+    resetKey: Any? = null,
+    header: @Composable () -> Unit,
+    pinned: (@Composable (headerBottom: () -> Float) -> Unit)? = null,
+    content: @Composable (top: Dp) -> Unit,
+) {
+    val density = LocalDensity.current
+    val c = MaterialTheme.colorScheme
+    val reduced = rememberReducedMotion()
+    val scope = rememberCoroutineScope()
+    var headerPx by remember { mutableIntStateOf(0) }
+    /** 0 = fully shown, -headerPx = fully hidden. */
+    val offset = remember { Animatable(0f) }
+    val settleSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 420f)
+
+    LaunchedEffect(resetKey) { if (reduced) offset.snapTo(0f) else offset.animateTo(0f, settleSpec) }
+
+    val connection = remember(reduced) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val h = headerPx.toFloat()
+                if (h <= 0f || consumed.y == 0f) return Offset.Zero
+                val target = (offset.value + consumed.y).coerceIn(-h, 0f)
+                scope.launch { offset.snapTo(target) }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val h = headerPx.toFloat()
+                val v = offset.value
+                if (h > 0f && v < 0f && v > -h) {
+                    val target = if (v < -h / 2f) -h else 0f
+                    if (reduced) offset.snapTo(target) else offset.animateTo(target, settleSpec)
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize().nestedScroll(connection)) {
+        content(with(density) { headerPx.toDp() })
+        val page = c.background
+        val vignette = remember(page) { vignetteBrush(page, opaqueAtTop = true) }
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height((statusTop + 72.dp) / 2)
+                .graphicsLayer { alpha = if (headerPx > 0) (-offset.value / headerPx).coerceIn(0f, 1f) else 0f }
+                .drawBehind { drawRect(vignette) },
+        )
+        pinned?.invoke { (headerPx + offset.value).coerceAtLeast(0f) }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .onSizeChanged { headerPx = it.height }
+                .graphicsLayer {
+                    translationY = offset.value
+                    alpha = if (headerPx > 0) 1f - 0.5f * (-offset.value / headerPx).coerceIn(0f, 1f) else 1f
+                }
+                .background(c.background),
+        ) { header() }
+    }
+}
 
 /** Strongest a page vignette gets (Derek: 80% of Ledgii's 95%). */
 const val VignetteAlpha = 0.76f

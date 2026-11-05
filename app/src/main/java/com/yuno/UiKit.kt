@@ -26,6 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.Forward5
+import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.Replay30
+import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,7 +55,12 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathNode
+import androidx.compose.ui.graphics.vector.VectorPath
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -145,6 +157,22 @@ fun BottomGestureGuard(modifier: Modifier = Modifier) {
             .windowInsetsBottomHeight(WindowInsets.mandatorySystemGestures)
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
     )
+}
+
+/** A circular icon button (channel back, share, etc.). */
+@Composable
+fun CircleAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .pressable(onClick = onClick)
+            .clip(CircleShape)
+            .background(c.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = c.onSurface)
+    }
 }
 
 /**
@@ -438,6 +466,16 @@ fun formatCount(n: Long): String = when {
     else -> trimmed(n / 1_000_000_000.0) + "B"
 }
 
+fun compactQuantity(n: Long): Long = when {
+    n >= 1_000_000 -> 1_000_000
+    n >= 1_000 -> 1_000
+    else -> n
+}
+
+fun viewsLine(views: Long): String = plural(R.plurals.views_count, compactQuantity(views), formatCount(views))
+
+fun subscribersLine(subscribers: Long): String = plural(R.plurals.subscribers_count, compactQuantity(subscribers), formatCount(subscribers))
+
 /** Channel subscriber / video counts (e.g. 4.85M, 1.1K). */
 fun formatStatCount(n: Long): String = when {
     n < 1_000 -> n.toString()
@@ -545,4 +583,88 @@ fun shareLink(context: android.content.Context, url: String, title: String) {
         .putExtra(android.content.Intent.EXTRA_TEXT, url)
         .putExtra(android.content.Intent.EXTRA_SUBJECT, title)
     context.startActivity(android.content.Intent.createChooser(send, null))
+}
+
+/**
+ * The −/+ glyph for a jump of [seconds] ([SeekStep]): Material's own for 5, 10 and 30. Material has
+ * no 15, 20 or 25, so they're put together from its pieces: its arrows, its "1", "0" and "5" (moved into
+ * place: Material's digits are all 2.89 of the 24 viewport wide, the shifts below are measured from its
+ * paths), and a "2" drawn to match them ([twoAt]: same height, stroke and width).
+ */
+fun seekIcon(forward: Boolean, seconds: Int = SeekStep.seconds): ImageVector = when (seconds) {
+    5 -> if (forward) Icons.Rounded.Forward5 else Icons.Rounded.Replay5
+    15 -> if (forward) forward15 else replay15
+    20 -> if (forward) forward20 else replay20
+    25 -> if (forward) forward25 else replay25
+    30 -> if (forward) Icons.Rounded.Forward30 else Icons.Rounded.Replay30
+    else -> if (forward) Icons.Rounded.Forward10 else Icons.Rounded.Replay10
+}
+
+// The 10's arrow + "1", and the 5's "5" where the 10's "0" stands.
+private val replay15 by lazy { seekGlyph("Rounded.Replay15", Icons.Rounded.Replay10, keep = listOf(0, 1), five = Icons.Rounded.Replay5 to 1.71f) }
+private val forward15 by lazy { seekGlyph("Rounded.Forward15", Icons.Rounded.Forward10, keep = listOf(0, 1), five = Icons.Rounded.Forward5 to 1.77f) }
+// The 30's arrow and "0", a "2" where its "3" stands.
+private val replay20 by lazy { seekGlyph("Rounded.Replay20", Icons.Rounded.Replay30, keep = listOf(0, 2, 3), twoAt = 8.63f) }
+private val forward20 by lazy { seekGlyph("Rounded.Forward20", Icons.Rounded.Forward30, keep = listOf(0, 2, 3), twoAt = 8.61f) }
+// The 30's arrow, a "2" for its "3", and the 5's "5" where its "0" stands.
+private val replay25 by lazy { seekGlyph("Rounded.Replay25", Icons.Rounded.Replay30, keep = listOf(0), twoAt = 8.63f, five = Icons.Rounded.Replay5 to 1.84f) }
+private val forward25 by lazy { seekGlyph("Rounded.Forward25", Icons.Rounded.Forward30, keep = listOf(0), twoAt = 8.61f, five = Icons.Rounded.Forward5 to 1.89f) }
+
+/**
+ * [base]'s subpaths at [keep] (the arrow is 0, then each digit outline), plus a "2" whose left edge is at
+ * [twoAt] and a Material "5" taken from [five]'s icon and shifted right by its number.
+ */
+private fun seekGlyph(name: String, base: ImageVector, keep: List<Int>, twoAt: Float? = null, five: Pair<ImageVector, Float>? = null): ImageVector {
+    val parts = subpaths(base)
+    val builder = ImageVector.Builder(name, base.defaultWidth, base.defaultHeight, base.viewportWidth, base.viewportHeight, autoMirror = false)
+        .addPath(keep.flatMap { parts[it] }, fill = SolidColor(Color.Black))
+    if (twoAt != null) {
+        builder.addPath(
+            twoAt(twoAt), stroke = SolidColor(Color.Black), strokeLineWidth = DigitStroke,
+            strokeLineCap = StrokeCap.Butt, strokeLineJoin = StrokeJoin.Miter, strokeLineMiter = 4f,
+        )
+    }
+    if (five != null) {
+        builder.addGroup(translationX = five.second).addPath(subpaths(five.first)[1], fill = SolidColor(Color.Black)).clearGroup()
+    }
+    return builder.build()
+}
+
+/** Material's digits: 11.68 – 16.06 tall, 2.89 wide, strokes 0.84 thick. */
+private const val DigitStroke = 0.84f
+
+/** A "2" in the box [left] … [left] + 2.89 × 11.68 … 16.06, drawn as a 0.84 stroke along its middle. */
+private fun twoAt(left: Float): List<PathNode> {
+    val h = DigitStroke / 2
+    val bottom = 16.06f - h
+    return listOf(
+        PathNode.MoveTo(left + 0.46f, 13.18f),
+        PathNode.CurveTo(left + 0.46f, 12.45f, left + 0.95f, 12.1f, left + 1.46f, 12.1f),
+        PathNode.CurveTo(left + 2.03f, 12.1f, left + 2.46f, 12.5f, left + 2.46f, 13.06f),
+        PathNode.CurveTo(left + 2.46f, 13.47f, left + 2.27f, 13.77f, left + 1.97f, 14.1f),
+        PathNode.LineTo(left + h + 0.03f, bottom),
+        PathNode.LineTo(left + 2.89f, bottom),
+    )
+}
+
+/** An icon's one path cut at each close: arrow first, then each digit's outline (each starts with an absolute move). */
+private fun subpaths(icon: ImageVector): List<List<PathNode>> {
+    val nodes = icon.root.filterIsInstance<VectorPath>().flatMap { it.pathData }
+    val out = mutableListOf<List<PathNode>>()
+    var current = mutableListOf<PathNode>()
+    nodes.forEach { node ->
+        current += node
+        if (node == PathNode.Close) { out += current; current = mutableListOf() }
+    }
+    if (current.isNotEmpty()) out += current
+    return out
+}
+
+@Composable
+fun seekLabel(side: Int): String = SeekStep.seconds.let { n ->
+    androidx.compose.ui.res.pluralStringResource(
+        if (side < 0) R.plurals.ui_seek_back else R.plurals.ui_seek_forward,
+        n,
+        n.toString(),
+    )
 }

@@ -388,6 +388,23 @@ object InnerTube {
         parseFeed(postAny("browse", body))
     }
 
+    suspend fun channelAvatarUrl(channelId: String): String? = withContext(Dispatchers.IO) {
+        val root = postAny("browse", JSONObject().put("browseId", channelId))
+        parseChannelAvatar(root.optJSONObject("header"))
+    }
+
+    internal fun parseChannelAvatar(header: JSONObject?): String? {
+        if (header == null) return null
+        var url: String? = null
+        header.walk { key, obj ->
+            if (url != null) return@walk
+            if (key == "avatarViewModel" || key == "decoratedAvatarViewModel") {
+                obj.optJSONObject("image")?.optJSONArray("sources")?.widestSourceUrl()?.let { url = it }
+            }
+        }
+        return url?.let { normalizeChannelAvatarUrl(absoluteUrl(it)) }
+    }
+
     suspend fun channels(): List<ChannelRef> = withContext(Dispatchers.IO) {
         val out = LinkedHashMap<String, ChannelRef>()
         post("browse", JSONObject().put("browseId", "FEchannels")).walk { key, obj ->
@@ -855,7 +872,7 @@ object InnerTube {
             id = id,
             title = o.text("title") ?: return null,
             channel = "", channelUrl = null,
-            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            thumbnail = sharpenFeedThumbnail("https://i.ytimg.com/vi/$id/hqdefault.jpg", id),
             avatar = null, durationSec = 0,
             views = parseViews(o.text("viewCountText")),
             uploaded = o.text("publishedTimeText"),
@@ -1002,7 +1019,7 @@ object InnerTube {
             title = o.text("title") ?: return null,
             channel = channelRun?.optString("text").orEmpty(),
             channelUrl = channelId?.takeIf { it.startsWith("UC") }?.let { "https://www.youtube.com/channel/$it" },
-            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            thumbnail = sharpenFeedThumbnail("https://i.ytimg.com/vi/$id/hqdefault.jpg", id),
             avatar = avatar?.let(::absoluteUrl),
             durationSec = parseDuration(duration),
             views = parseViews(o.text("viewCountText") ?: o.text("shortViewCountText") ?: infoRuns.firstOrNull { it.contains("view") }),
@@ -1030,7 +1047,7 @@ object InnerTube {
             title = title,
             channel = parts.firstOrNull { !it.contains("view") && !it.contains("ago") }.orEmpty(),
             channelUrl = o.collectStrings("browseId").firstOrNull { it.startsWith("UC") }?.let { "https://www.youtube.com/channel/$it" },
-            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            thumbnail = sharpenFeedThumbnail("https://i.ytimg.com/vi/$id/hqdefault.jpg", id),
             avatar = avatar?.let(::absoluteUrl),
             durationSec = parseDuration(duration),
             views = parseViews(parts.firstOrNull { it.contains("view") }),
@@ -1216,4 +1233,19 @@ internal fun parseSaveChoices(answer: JSONObject): List<PlaylistChoice> {
         }
     }
     return out.values.toList()
+}
+
+internal fun JSONArray.widestSourceUrl(): String? {
+    var best: String? = null
+    var bestW = -1
+    for (i in 0 until length()) {
+        val entry = optJSONObject(i) ?: continue
+        val url = entry.optString("url").ifBlank { continue }
+        val w = entry.optInt("width", channelAvatarEdgePx(url).takeIf { it > 0 } ?: ytimgThumbnailWidth(url))
+        if (w > bestW) {
+            bestW = w
+            best = url
+        }
+    }
+    return best ?: optJSONObject(length() - 1)?.optString("url")?.ifBlank { null }
 }

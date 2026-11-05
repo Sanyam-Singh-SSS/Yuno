@@ -144,14 +144,3 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
 }
 
 /** Account button in the headers: the avatar when signed in, a person icon otherwise. */
-@Composable
-fun AccountAction(onClick: () -> Unit) {
-    val profile = Account.profile
-    if (profile == null) {
-        CircleAction(Icons.Rounded.AccountCircle, stringResource(R.string.ui_sign_in), onClick)
-    } else {
-        Box(Modifier.size(44.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
-            ChannelAvatar(profile.avatar, profile.name, size = 40)
-        }
-    }
-}

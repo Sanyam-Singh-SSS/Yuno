@@ -9,11 +9,35 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.CoroutineScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +71,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +89,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,11 +104,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -100,6 +130,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.max
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -130,6 +162,8 @@ fun VideoContent(
     // Hidden until the video is tapped: opening the player (from the mini-player too) and
     // rotating in or out of fullscreen never pop the controls up.
     var controlsVisible by remember { mutableStateOf(false) }
+    var drop by remember { mutableStateOf<DropKind?>(null) }
+    BackHandler(enabled = drop != null) { drop = null }
     var touchedAt by remember { mutableLongStateOf(0L) }
     fun touched() { touchedAt = System.nanoTime() }
     LaunchedEffect(controlsVisible, state.isPlaying, touchedAt) {
@@ -178,7 +212,7 @@ fun VideoContent(
     val currentInactiveTap by androidx.compose.runtime.rememberUpdatedState(onInactiveTap)
     fun toggleControls() { controlsVisible = !controlsVisible; touched() }
     fun seekStep(side: Int) {
-        val moved = state.seekBy(side * SeekStepMs)
+        val moved = state.seekBy(side * SeekStep.ms)
         burstSeconds += ((abs(moved) + 500) / 1000).toInt()
         burstTaps++
     }
@@ -188,10 +222,78 @@ fun VideoContent(
     val fullscreenControlsScrub = fullscreen && !portraitEdgeScrub
     val scrubbing = state.scrubDragging
     val scrubPreviewMs = state.scrubPreviewMs
+    val zoomTarget = if (fullscreen && state.zoomedToFill) 1f else 0f
+    val zoom = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
+    var pinching by remember { mutableStateOf(false) }
+    val zoomFling = remember { floatArrayOf(0f) }
+    LaunchedEffect(zoomTarget, pinching) {
+        if (pinching) return@LaunchedEffect
+        val velocity = zoomFling[0].also { zoomFling[0] = 0f }
+        if (reduced) zoom.snapTo(zoomTarget)
+        else zoom.animateTo(zoomTarget, spring(dampingRatio = 0.5f, stiffness = 380f, visibilityThreshold = 0.0005f), initialVelocity = velocity)
+    }
+    var stage by remember { mutableStateOf(IntSize.Zero) }
+    val zoomScope = rememberCoroutineScope()
     LaunchedEffect(state.current?.id) {
         state.current?.id?.let { ScrubStoryboards.preload(it) }
     }
-    Box(modifier.background(Color.Black).onGloballyPositioned { pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub) {
+    Box(
+        modifier.background(Color.Black)
+            .then(if (fullscreen) Modifier.clipToBounds() else Modifier)
+            .onSizeChanged { stage = it }
+            .onGloballyPositioned { pip?.videoBounds = it.boundsInWindow() }
+            .then(if (!fullscreen) Modifier else Modifier.pointerInput(state) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var event = awaitPointerEvent(PointerEventPass.Initial)
+                    while (event.changes.count { it.pressed } < 2) {
+                        if (event.changes.none { it.pressed }) return@awaitEachGesture
+                        event = awaitPointerEvent(PointerEventPass.Initial)
+                    }
+                    if (state.holdSpeedActive || state.error != null || !currentInteractive) return@awaitEachGesture
+                    val fill = fillScale(size.width.toFloat(), size.height.toFloat(), state.videoAspect)
+                    val from = 1f + (fill - 1f) * zoom.value
+                    var total = 1f
+                    var started = false
+                    val tracker = VelocityTracker1D(isDataDifferential = false)
+                    try {
+                        do {
+                            total *= event.calculateZoom()
+                            if (!started && abs(1f - total) * event.calculateCentroidSize(useCurrent = false) > viewConfiguration.touchSlop) {
+                                started = true
+                                pinching = true
+                                controlsVisible = false
+                                burstActive = false
+                            }
+                            if (started) {
+                                event.changes.forEach { it.consume() }
+                                if (fill > 1.005f) {
+                                    val to = (stretched(from * total, fill) - 1f) / (fill - 1f)
+                                    tracker.addDataPoint(event.changes.first().uptimeMillis, to)
+                                    zoomScope.launch { zoom.snapTo(to) }
+                                }
+                            }
+                            event = awaitPointerEvent(PointerEventPass.Initial)
+                        } while (event.changes.count { it.pressed } >= 2)
+                        if (!started) return@awaitEachGesture
+                        val toFill = when {
+                            total > 1f + ZoomDecide -> true
+                            total < 1f - ZoomDecide -> false
+                            else -> null
+                        }
+                        if (toFill != null && toFill != state.zoomedToFill) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        if (toFill != null) state.setZoomedToFill(toFill)
+                        if (fill > 1.005f) zoomFling[0] = tracker.calculateVelocity().coerceIn(-ZoomFlingMax, ZoomFlingMax)
+                    } finally {
+                        pinching = false
+                    }
+                    while (event.changes.any { it.pressed }) {
+                        event.changes.forEach { it.consume() }
+                        event = awaitPointerEvent(PointerEventPass.Initial)
+                    }
+                }
+            })
+            .pointerInput(state, portraitEdgeScrub) {
         val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
         val holdSpeedMs = Motion.HoldSpeedMs
         coroutineScope {
@@ -274,78 +376,88 @@ fun VideoContent(
                 val side = if (x < 0.4f) -1 else if (x > 0.6f) 1 else 0
                 if (burstActive && side == burstSide) { seekStep(side); return@awaitEachGesture }
                 burstActive = false
-                val inSeekWindow = seekWindow?.isActive == true
+                // A lone tap waits out the double-tap timeout before the controls come up, so a second
+                // tap on that side only seeks (Skipii pendingTap).
+                val follows = seekWindow?.isActive == true && side != 0 && side == pendingSide && up.uptimeMillis - pendingAt < doubleTapMs
                 seekWindow?.cancel()
-                if (side == 0) {
-                    toggleControls()
-                } else if (inSeekWindow && side == pendingSide && up.uptimeMillis - pendingAt < doubleTapMs) {
+                if (follows) {
                     controlsVisible = false
                     burstSide = side
                     burstSeconds = 0
                     burstActive = true
                     seekStep(side)
                 } else {
-                    toggleControls()
                     pendingSide = side
                     pendingAt = up.uptimeMillis
-                    seekWindow = launch { delay(doubleTapMs) }
+                    seekWindow = launch { delay(doubleTapMs); toggleControls() }
                 }
             }
         }
     }) {
         Box(
             Modifier
-                // Letterbox/pillarbox inside the stage (16:9 cap for ultrawide in portrait; fullscreen fills).
+                // Letterbox/pillarbox inside the stage. As large as fits; bars appear past its limits.
                 .fillMaxSize()
-                .aspectFit(state.videoAspect)
-                .clipToBounds(),
+                .aspectFit(state.videoAspect),
         ) {
+            // Zoomed, the picture (and its clip) grows past this box to cover the stage; the captions
+            // and the burst line below stay on the unzoomed box. (Skipii VideoView)
             Box(
-                Modifier.fillMaxSize().graphicsLayer {
-                    val n = nudge.value
-                    translationX = burstSide * 5.dp.toPx() * n
-                    scaleX = 1f + 0.03f * n
-                    scaleY = 1f + 0.03f * n
-                },
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val s = if (fullscreen) 1f + (fillScale(stage.width.toFloat(), stage.height.toFloat(), state.videoAspect) - 1f) * zoom.value else 1f
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .clipToBounds(),
             ) {
-                // Switching videos: nothing of the last one, and not the next one's poster.
-                // Black until its own frame is ready.
-                if (state.blankUntilFrame) {
-                    Box(Modifier.fillMaxSize().background(Color.Black))
-                } else if (state.hidesStaleVideo || HeldFrame.image == null) {
-                    // The captured frame sits under the live view. The poster is a
-                    // different picture and flashed through whenever the view moved.
-                    Thumbnail(
-                        state.current?.thumbnail,
-                        Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
-                        radius = 0,
-                    )
-                } else {
-                    HeldFrameImage(Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f })
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        val n = nudge.value
+                        translationX = burstSide * 5.dp.toPx() * n
+                        scaleX = 1f + 0.03f * n
+                        scaleY = 1f + 0.03f * n
+                    },
+                ) {
+                    // Switching videos: nothing of the last one, and not the next one's poster.
+                    // Black until its own frame is ready.
+                    if (state.blankUntilFrame) {
+                        Box(Modifier.fillMaxSize().background(Color.Black))
+                    } else if (state.hidesStaleVideo || HeldFrame.image == null) {
+                        // The captured frame sits under the live view. The poster is a
+                        // different picture and flashed through whenever the view moved.
+                        Thumbnail(
+                            state.current?.thumbnail,
+                            Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f },
+                            radius = 0,
+                        )
+                    } else {
+                        HeldFrameImage(Modifier.fillMaxSize().graphicsLayer { alpha = if (scrubbing) 0f else 1f })
+                    }
+                    if (liveSurface) {
+                        LocalVideoSurface.current(Modifier.fillMaxSize().hideStaleVideo(state))
+                    }
+                    if (scrubbing && scrubPreviewMs != null) {
+                        ScrubVideoPreview(
+                            state.current?.id,
+                            scrubPreviewMs,
+                            Modifier.fillMaxSize(),
+                        )
+                    }
                 }
-                if (liveSurface) {
-                    LocalVideoSurface.current(Modifier.fillMaxSize().hideStaleVideo(state))
-                }
-                if (scrubbing && scrubPreviewMs != null) {
-                    ScrubVideoPreview(
-                        state.current?.id,
-                        scrubPreviewMs,
-                        Modifier.fillMaxSize(),
-                    )
-                }
-                if (state.error == null) {
-                    val reduced = rememberReducedMotion()
-                    val captionLift by animateDpAsState(
-                        when {
-                            controlsVisible && interactive -> if (fullscreen) 72.dp else 56.dp
-                            state.askSegment != null -> 50.dp
-                            else -> if (fullscreen) 22.dp else 12.dp
-                        },
-                        if (reduced) tween(0) else spring(dampingRatio = 0.9f, stiffness = 380f),
-                        label = "captionLift",
-                    )
-                    CaptionLayer(state, bottom = captionLift, alpha = { if (scrubbing) 0f else 1f })
-                }
+            }
+            if (state.error == null) {
+                val captionLift by animateDpAsState(
+                    when {
+                        controlsVisible && interactive -> if (fullscreen) 72.dp else 56.dp
+                        state.askSegment != null -> 50.dp
+                        else -> if (fullscreen) 22.dp else 12.dp
+                    },
+                    if (reduced) tween(0) else spring(dampingRatio = 0.9f, stiffness = 380f),
+                    label = "captionLift",
+                )
+                CaptionLayer(state, bottom = captionLift, alpha = { if (scrubbing) 0f else 1f })
             }
             // Where the burst has got to, while the controls (and their scrubber) are hidden.
             Canvas(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp).graphicsLayer { alpha = peekAlpha }) {
@@ -363,7 +475,7 @@ fun VideoContent(
 
         val error = state.error
         if (error != null) {
-            ErrorPanel(error, onRetry = state::retry, onCollapse = onCollapse)
+            ErrorPanel(error, state, onCollapse = onCollapse)
             return@Box
         }
 
@@ -404,20 +516,36 @@ fun VideoContent(
         DisposableEffect(Unit) { onDispose { VideoControlsOverlay.dimAlpha = 0f } }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
             Box(
-                Modifier.fillMaxSize().background(VideoControlsOverlay.scrim),
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.5f),
+                        0.32f to Color.Black.copy(alpha = 0.08f),
+                        0.58f to Color.Black.copy(alpha = 0.08f),
+                        1f to Color.Black.copy(alpha = 0.62f),
+                    ),
+                ),
             )
-            val edge = if (fullscreen) {
-                Modifier.fullscreenControlsHorizontalInsets().padding(vertical = FullscreenControlsVerticalPad)
-            } else {
-                Modifier
+            // Skipii's on-video controls: tonal tiles, seek step from Settings, cards in fullscreen.
+            val tool = if (fullscreen) 40.dp else 36.dp
+            val inset = if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 12.dp, vertical = 8.dp) else Modifier
+            val dropAnchors = remember { arrayOfNulls<LayoutCoordinates>(4) }
+            var dropAnchor by remember { mutableStateOf(Rect.Zero) }
+            var dropRoom by remember { mutableFloatStateOf(0f) }
+            fun toggleDrop(kind: DropKind, slot: Int): Boolean {
+                val box = dropAnchors[0]
+                val pill = dropAnchors[slot]
+                if (!fullscreen || box == null || pill == null || !box.isAttached || !pill.isAttached) return false
+                dropAnchor = box.localBoundingBoxOf(pill, clipBounds = false)
+                dropRoom = box.size.height.toFloat()
+                drop = if (drop == kind) null else kind
+                return true
             }
-            Box(Modifier.fillMaxSize().then(edge)) {
-                // Top row: title (fullscreen), chapters, speed, quality, audio only, picture-in-picture.
+            Box(Modifier.fillMaxSize().then(inset).onGloballyPositioned { dropAnchors[0] = it }) {
                 Row(
                     Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // No minimize button: swipe the player down (or Back) instead.
                     if (fullscreen) {
                         Text(
                             state.current?.title.orEmpty(),
@@ -430,111 +558,100 @@ fun VideoContent(
                         )
                     } else {
                         Spacer(Modifier.weight(1f))
+                        OverlayTile(stringResource(R.string.video_audio_only), enabled, tool, filled = AudioOnly.enabled, onClick = { touched(); state.setAudioOnly(!AudioOnly.enabled) }) { ink ->
+                            Icon(Icons.Outlined.Headphones, null, tint = ink, modifier = Modifier.size(tool * 0.5f))
+                        }
                     }
-                    val chapters = state.details?.chapters.orEmpty()
-                    if (chapters.isNotEmpty()) {
-                        Spacer(Modifier.width(8.dp))
-                        ControlPill("Chapters", enabled) { touched(); state.sheet = PlayerSheet.Chapters }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    // Only says it's off 1× by its own value; the pill is always there to reach the ruler.
-                    ControlPill(PlaybackSpeed.label(state.speed) + "×", enabled) { touched(); state.sheet = PlayerSheet.Speed }
-                    // Label tier from decoded frames (1080p, not ultrawide pixel height); details until known.
-                    (state.decodedHeight?.let { "${it}p" } ?: state.details?.quality)?.let { quality ->
-                        Spacer(Modifier.width(8.dp))
-                        ControlPill(
-                            if (QualityPreference.height == null) "Auto · $quality" else quality,
-                            enabled,
-                        ) { touched(); state.sheet = PlayerSheet.Quality }
+                    val stickySpeed = PlaybackSpeed.remember && !PlaybackSpeed.isNormal(state.speed)
+                    OverlayPill(
+                        PlaybackSpeed.label(state.speed) + "×", stringResource(R.string.video_playback_speed), enabled, tool, filled = stickySpeed,
+                        modifier = Modifier.onGloballyPositioned { dropAnchors[2] = it },
+                    ) {
+                        touched()
+                        if (!toggleDrop(DropKind.Speed, 2)) state.sheet = PlayerSheet.Speed
                     }
                     if (state.captions.tracks.isNotEmpty()) {
-                        Spacer(Modifier.width(8.dp))
-                        GlassButton(
-                            Icons.Rounded.ClosedCaption,
-                            stringResource(R.string.video_captions),
-                            enabled,
-                            size = 30.dp,
-                            iconSize = 18.dp,
-                            active = state.captions.on,
+                        OverlayTile(
+                            stringResource(R.string.video_captions), enabled, tool, filled = state.captions.on,
+                            modifier = Modifier.onGloballyPositioned { dropAnchors[3] = it },
+                            onClick = {
+                                touched()
+                                state.captions.turn(true)
+                                if (!toggleDrop(DropKind.Captions, 3)) state.sheet = PlayerSheet.Captions
+                            },
+                        ) { ink -> Icon(Icons.Rounded.ClosedCaption, null, tint = ink, modifier = Modifier.size(tool * 0.52f)) }
+                    }
+                    (state.decodedHeight?.let { "${it}p" } ?: state.details?.quality)?.let { quality ->
+                        OverlayPill(
+                            if (QualityPreference.height == null) stringResource(R.string.video_quality_auto) + " · $quality" else quality, stringResource(R.string.video_quality), enabled, tool,
+                            modifier = Modifier.onGloballyPositioned { dropAnchors[1] = it },
                         ) {
                             touched()
-                            state.captions.turn(true)
-                            state.sheet = PlayerSheet.Captions
+                            if (!toggleDrop(DropKind.Quality, 1)) state.sheet = PlayerSheet.Quality
                         }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    GlassButton(
-                        SfIcons.Headphones,
-                        if (AudioOnly.enabled) "Video off" else "Audio only",
-                        enabled,
-                        size = 30.dp,
-                        iconSize = 18.dp,
-                        active = AudioOnly.enabled,
-                    ) { touched(); state.setAudioOnly(!AudioOnly.enabled) }
                     if (pip?.supported == true) {
-                        Spacer(Modifier.width(8.dp))
-                        GlassButton(SfIcons.Pip, "Picture-in-picture", enabled, size = 30.dp, iconSize = 18.dp) {
+                        OverlayTile(stringResource(R.string.video_pip), enabled, tool, onClick = {
                             controlsVisible = false
-                            if (!pip.enter(state.videoAspect)) state.actionMessage = "Picture-in-picture is turned off for Yuno in Settings."
-                        }
+                            if (!pip.enter(state.videoAspect)) state.actionMessage = str(R.string.video_pip_off)
+                        }) { ink -> Icon(Icons.Rounded.PictureInPictureAlt, null, tint = ink, modifier = Modifier.size(tool * 0.5f)) }
                     }
                 }
+                val seek = if (fullscreen) 60.dp else 51.dp
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(if (fullscreen) 56.dp else 30.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (fullscreen) 32.dp else 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val skip = if (fullscreen) 56.dp else 48.dp
-                    GlassButton(SfIcons.Replay10, "Back 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
-                        touched(); state.seekBy(-10_000)
-                    }
-                    MorphPlayButton(
+                    OverlaySeek(-1, enabled, seek) { touched(); state.seekBy(-SeekStep.ms) }
+                    OverlayPlay(
                         playing = state.isPlaying,
                         buffering = state.isBuffering || (state.loading && state.details == null),
-                        size = if (fullscreen) 76.dp else 66.dp,
-                        // Same glass as the skip buttons.
-                        container = Color.Black.copy(alpha = 0.38f),
-                        content = Color.White,
+                        size = if (fullscreen) 78.dp else 66.dp,
                         enabled = enabled,
                     ) { touched(); state.togglePlay() }
-                    GlassButton(SfIcons.Forward10, "Forward 10 seconds", enabled, size = skip, iconSize = skip * 0.62f) {
-                        touched(); state.seekBy(10_000)
-                    }
+                    OverlaySeek(1, enabled, seek) { touched(); state.seekBy(SeekStep.ms) }
                 }
                 Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth()
                         .padding(
-                            start = if (fullscreenControlsScrub) 0.dp else 14.dp,
-                            end = if (fullscreenControlsScrub) 0.dp else 8.dp,
-                            bottom = EdgeScrubTimeRowBottomPad +
-                                if (fullscreenControlsScrub) FullscreenControlsLift else 0.dp,
+                            start = 14.dp,
+                            end = 8.dp,
+                            bottom = EdgeScrubTimeRowBottomPad + if (fullscreenControlsScrub) FullscreenControlsLift else 0.dp,
                         ),
                 ) {
-                    Row(
-                        Modifier.height(EdgeScrubTimeRowHeight),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(formatDuration(state.scrubPreviewMs ?: state.positionMs), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            " / " + formatDuration(state.durationMs),
-                            color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f),
-                        )
+                    val shownMs = state.scrubPreviewMs ?: state.positionMs
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatDuration(shownMs), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                " / " + formatDuration(state.durationMs),
+                                color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                            )
+                            state.chapterAt(shownMs)?.let {
+                                Text(
+                                    " · $it", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                         state.askSegment?.let { segment ->
                             SkipSegmentPill(segment, enabled = true) { touched(); state.skipSegment(segment) }
-                            Spacer(Modifier.width(6.dp))
                         }
-                        GlassButton(
-                            if (fullscreen) SfIcons.FullscreenExit else SfIcons.Fullscreen,
-                            if (fullscreen) "Exit fullscreen" else "Fullscreen",
-                            enabled,
-                            size = 34.dp,
-                            iconSize = 22.dp,
-                            tinted = false,
-                        ) { onToggleFullscreen() }
+                        if (state.queue.isNotEmpty()) {
+                            OverlayTile(stringResource(R.string.video_next), enabled, 34.dp, onClick = { touched(); state.playNextUp() }) { ink ->
+                                Icon(Icons.Rounded.SkipNext, null, tint = ink, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        OverlayTile(stringResource(if (fullscreen) R.string.video_exit_fullscreen else R.string.video_fullscreen), enabled, 34.dp, onClick = onToggleFullscreen) { ink ->
+                            Icon(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, null, tint = ink, modifier = Modifier.size(21.dp))
+                        }
                     }
+                }
+                if (fullscreen) {
+                    QualityDrop(state, drop == DropKind.Quality, dropAnchor, dropRoom, onClose = { drop = null })
+                    SpeedDrop(state, drop == DropKind.Speed, dropAnchor, dropRoom, onClose = { drop = null })
+                    CaptionsDrop(state, drop == DropKind.Captions, dropAnchor, dropRoom, onClose = { drop = null })
                 }
             }
         }
@@ -662,7 +779,7 @@ fun AudioOnlyStage(
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = ramp(progress(), 0.25f, 0.85f) }.background(c.surfaceContainer))
         val error = state.error
         if (error != null) {
-            ErrorPanel(error, onRetry = state::retry, onCollapse = {})
+            ErrorPanel(error, state, onCollapse = {})
             return@Box
         }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsAlpha() * gather().coerceIn(0f, 1f) }) {
@@ -680,7 +797,7 @@ fun AudioOnlyStage(
                 fun Modifier.slide(side: Int) = graphicsLayer {
                     translationX = -side * (1f - gather()) * (gap + (play + skip) / 2).toPx()
                 }
-                Box(Modifier.slide(-1)) { TonalSkip(SfIcons.Replay10, "Back 10 seconds", interactive, skip) { state.seekBy(-10_000) } }
+                Box(Modifier.slide(-1)) { TonalSkip(seekIcon(false), seekLabel(-1), interactive, skip) { state.seekBy(-SeekStep.ms) } }
                 Box(Modifier.graphicsLayer { val k = lerpF(0.6f, 1f, gather()); scaleX = k; scaleY = k }) {
                     MorphPlayButton(
                         playing = state.isPlaying,
@@ -691,7 +808,7 @@ fun AudioOnlyStage(
                         enabled = interactive,
                     ) { state.togglePlay() }
                 }
-                Box(Modifier.slide(1)) { TonalSkip(SfIcons.Forward10, "Forward 10 seconds", interactive, skip) { state.seekBy(10_000) } }
+                Box(Modifier.slide(1)) { TonalSkip(seekIcon(true), seekLabel(1), interactive, skip) { state.seekBy(SeekStep.ms) } }
             }
             // Same place and padding as the video's bottom bar (its row is the fullscreen button's 34 dp).
             Column(
@@ -949,11 +1066,31 @@ fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
             itemsIndexed(chapters) { index, chapter ->
                 SheetRow(chapter.title, formatDuration(chapter.startMs), index == current) {
                     state.seekTo(chapter.startMs)
-                    onDismiss()
+                    if (!ChaptersStayOpen.on) onDismiss()
                 }
             }
             item { Spacer(Modifier.height(20.dp)) }
         }
+    }
+}
+
+/** How much the picture grows to cover a stage when it's laid out to fit it at [aspect]. */
+private fun fillScale(w: Float, h: Float, aspect: Float): Float {
+    if (w <= 0f || h <= 0f || aspect <= 0f) return 1f
+    val stage = w / h
+    return max(stage / aspect, aspect / stage)
+}
+
+private const val ZoomDecide = 0.04f
+private const val ZoomStretch = 0.06f
+private const val ZoomFlingMax = 8f
+
+private fun stretched(raw: Float, fill: Float): Float {
+    fun give(over: Float) = ZoomStretch * (1f - exp(-over / (2f * ZoomStretch)))
+    return when {
+        raw > fill -> fill * (1f + give(raw / fill - 1f))
+        raw < 1f -> 1f - give(1f - raw)
+        else -> raw
     }
 }
 
@@ -990,7 +1127,8 @@ private fun SheetRow(title: String, subtitle: String?, selected: Boolean, onClic
 }
 
 @Composable
-private fun BoxScope.ErrorPanel(message: String, onRetry: () -> Unit, onCollapse: () -> Unit) {
+private fun BoxScope.ErrorPanel(message: String, state: PlayerState, onCollapse: () -> Unit) {
+    val context = LocalContext.current
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)))
     Column(
         Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
@@ -998,11 +1136,24 @@ private fun BoxScope.ErrorPanel(message: String, onRetry: () -> Unit, onCollapse
     ) {
         Icon(SfIcons.ErrorOutline, null, tint = Color.White, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(8.dp))
-        Text(message, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp)
+        if (state.botCheck) {
+            Text(stringResource(R.string.player_error_bot_check), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.player_error_bot_check_hint), color = Color.White.copy(alpha = 0.78f), fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center)
+        } else {
+            Text(message, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp, textAlign = TextAlign.Center)
+        }
         Spacer(Modifier.height(12.dp))
-        Box(
-            Modifier.pressable(onClick = onRetry).clip(CircleShape).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
-        ) { Text("Try again", color = Color(0xFF141414), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.pressable(onClick = state::retry).clip(CircleShape).background(Color.White).padding(horizontal = 18.dp, vertical = 9.dp),
+            ) { Text(stringResource(R.string.video_try_again), color = Color(0xFF141414), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1) }
+            if (state.botCheck) {
+                Box(
+                    Modifier.pressable { state.openInYouTube(context) }.clip(CircleShape).background(Color.White.copy(alpha = 0.2f)).padding(horizontal = 18.dp, vertical = 9.dp),
+                ) { Text(stringResource(R.string.video_open_in_youtube), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1) }
+            }
+        }
     }
 }
 
@@ -1035,6 +1186,369 @@ private fun GlassButton(
     ) { Icon(icon, description, tint = if (active) c.onPrimary else Color.White, modifier = Modifier.size(iconSize)) }
 }
 
+@Composable
+private fun OverlayTile(
+    description: String,
+    enabled: Boolean,
+    size: Dp,
+    filled: Boolean = false,
+    tile: Color = MaterialTheme.colorScheme.surfaceVariant,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    content: @Composable (ink: Color) -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    Box(
+        modifier
+            .squishOn(filled)
+            .size(size)
+            .pressable(enabled = enabled) { view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK); onClick() }
+            .clip(CircleShape)
+            .background(if (filled) c.primary else tile)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) { content(if (filled) c.onPrimary else c.onSurface) }
+}
+
+/** A worded control on the video (speed, quality): a capsule [height] tall, otherwise [OverlayTile]'s look. */
+@Composable
+private fun OverlayPill(
+    label: String,
+    description: String,
+    enabled: Boolean,
+    height: Dp,
+    filled: Boolean = false,
+    tile: Color = MaterialTheme.colorScheme.surfaceVariant,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    Box(
+        modifier
+            .squishOn(filled)
+            .height(height)
+            .widthIn(min = height)
+            .pressable(enabled = enabled) { view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK); onClick() }
+            .clip(CircleShape)
+            .background(if (filled) c.primary else tile)
+            .padding(horizontal = 11.dp)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (filled) c.onPrimary else c.onSurface, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    }
+}
+
+/** −10 / +10 on the video, as on the pill: the arrow kicks the way it seeks. */
+@Composable
+private fun OverlaySeek(side: Int, enabled: Boolean, size: Dp, tile: Color = MaterialTheme.colorScheme.surfaceVariant, onSeek: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val reduced = rememberReducedMotion()
+    val spin = remember { Animatable(0f) }
+    Box(
+        Modifier
+            .size(size)
+            .pressable(enabled = enabled) {
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                onSeek()
+                if (!reduced) scope.launch { spin.animateTo(0f, keyframes { durationMillis = 420; side * 50f at 150 }) }
+            }
+            .clip(CircleShape)
+            .background(tile),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            seekIcon(forward = side > 0),
+            contentDescription = seekLabel(side),
+            tint = c.onSurface,
+            modifier = Modifier.size(size * 0.51f).graphicsLayer { rotationZ = spin.value },
+        )
+    }
+}
+
+/** Play / pause on the video: a full-primary circle [size] across (Derek, 2026-10-31); a spinner while loading. */
+@Composable
+private fun OverlayPlay(playing: Boolean, buffering: Boolean, size: Dp, enabled: Boolean, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val view = LocalView.current
+    Box(
+        Modifier
+            .size(size)
+            .pressable(enabled = enabled) { view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK); onClick() }
+            .clip(CircleShape)
+            .background(c.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (buffering) {
+            CircularProgressIndicator(color = c.onPrimary, strokeWidth = 3.dp, modifier = Modifier.size(size * 0.4f))
+        } else {
+            Icon(
+                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                stringResource(if (playing) R.string.video_pause else R.string.video_play),
+                tint = c.onPrimary,
+                modifier = Modifier.size(size * 0.46f).squishOn(playing),
+            )
+        }
+    }
+}
+
+/**
+ * Hides the picture while the shared surface still holds the frame from before audio only
+ * after video is turned back on ([PlayerState.hidesStaleVideo]); the thumbnail underneath shows
+ * instead, and the fresh frame fades in.
+ */
+
+private enum class DropKind { Quality, Speed, Captions }
+
+/**
+ * Fullscreen's captions card (docs/design/captions.html), the quality card's twin hanging from the CC tile: Off, every
+ * track, then the translations made on the phone. A pick lands its check and the card folds; picking a translation
+ * that still has to download starts it (the captions say so on the video).
+ */
+@Composable
+private fun BoxScope.CaptionsDrop(state: PlayerState, open: Boolean, anchor: Rect, boxHeight: Float, onClose: () -> Unit) {
+    val shown = dropShown(open)
+    if (shown <= 0f || anchor == Rect.Zero) return
+    val currentClose by androidx.compose.runtime.rememberUpdatedState(onClose)
+    val cap = state.captions
+    // Fixed while the card is up, so a pick never reshuffles the rows under the finger.
+    val options = remember { captionOptions(cap, all = false).filterIsInstance<CaptionOption.Pick>() }
+    OverlayDrop(open, shown, anchor, boxHeight, stringResource(R.string.video_drop_captions), openAt = { if (!cap.on) 0 else 1 + options.indexOfFirst { cap.shows(it) } }, onClose = onClose) { scope ->
+        DropRow(title = stringResource(R.string.video_captions_off), tag = null, selected = !cap.on) {
+            if (!open) return@DropRow
+            cap.turn(false)
+            scope.launch { delay(420); currentClose() }
+        }
+        options.forEach { option ->
+            DropRow(
+                title = option.title,
+                tag = when {
+                    option.choice.translateTo == null -> if (option.choice.track.auto) stringResource(R.string.video_captions_tag_auto) else null
+                    option.busy -> stringResource(R.string.video_captions_tag_downloading)
+                    option.ready -> stringResource(R.string.video_captions_tag_translated)
+                    else -> stringResource(R.string.video_captions_tag_download)
+                },
+                selected = cap.shows(option),
+            ) {
+                if (!open) return@DropRow
+                cap.pick(option.choice)
+                scope.launch { delay(420); currentClose() }
+            }
+        }
+    }
+}
+
+/**
+ * Fullscreen's quality picker (GitHub #25; Derek picked A "Drop" in `docs/design/fullscreen-quality.html`): a small
+ * card of the overlay's glass hanging from the quality pill instead of a sheet over the whole video. Auto, then every
+ * height with its tag. A pick lands its check, then the card folds after 420 ms.
+ */
+@Composable
+private fun BoxScope.QualityDrop(state: PlayerState, open: Boolean, anchor: Rect, boxHeight: Float, onClose: () -> Unit) {
+    val details = state.details ?: return
+    val shown = dropShown(open)
+    if (shown <= 0f || anchor == Rect.Zero) return
+    val currentClose by androidx.compose.runtime.rememberUpdatedState(onClose)
+    val rows = remember(details) { listOf<Int?>(null) + details.qualities }
+    var picked by remember { mutableStateOf(QualityPreference.height) }
+    OverlayDrop(open, shown, anchor, boxHeight, stringResource(R.string.video_drop_quality), openAt = { rows.indexOf(picked) }, onClose = onClose) { scope ->
+        val playing = state.decodedHeight?.let { "${it}p" } ?: details.quality
+        rows.forEach { h ->
+            DropRow(
+                title = if (h == null) stringResource(R.string.video_quality_auto) else "${h}p",
+                tag = if (h == null) playing else qualityTag(h),
+                selected = picked == h,
+            ) {
+                if (!open) return@DropRow
+                picked = h
+                if (h != QualityPreference.height) state.setQuality(h)
+                scope.launch { delay(420); currentClose() }
+            }
+        }
+    }
+}
+
+/**
+ * Fullscreen's speed picker (GitHub #31: the ruler's sheet filled the landscape screen): the quality card's look,
+ * hanging from the speed pill, with preset speeds. A speed set on the ruler (portrait) that isn't a preset shows as
+ * its own "Custom" row. Under them, "Every video" is the ruler's "Remember for every video" (it stays open on that one).
+ */
+@Composable
+private fun BoxScope.SpeedDrop(state: PlayerState, open: Boolean, anchor: Rect, boxHeight: Float, onClose: () -> Unit) {
+    val shown = dropShown(open)
+    if (shown <= 0f || anchor == Rect.Zero) return
+    val currentClose by androidx.compose.runtime.rememberUpdatedState(onClose)
+    var picked by remember { mutableFloatStateOf(PlaybackSpeed.snap(state.speed)) }
+    // Fixed while the card is up, so a pick never reshuffles the rows under the finger.
+    val rows = remember {
+        val custom = picked.takeIf { s -> SpeedPresets.none { abs(it - s) < PlaybackSpeed.STEP / 2 } }
+        (SpeedPresets + listOfNotNull(custom)).sorted()
+    }
+    fun same(a: Float, b: Float) = abs(a - b) < PlaybackSpeed.STEP / 2
+    OverlayDrop(open, shown, anchor, boxHeight, stringResource(R.string.video_drop_speed), openAt = { rows.indexOfFirst { same(it, picked) } }, onClose = onClose) { scope ->
+        rows.forEach { s ->
+            DropRow(
+                title = PlaybackSpeed.label(s) + "×",
+                tag = when {
+                    PlaybackSpeed.isNormal(s) -> stringResource(R.string.video_speed_normal)
+                    SpeedPresets.none { same(it, s) } -> stringResource(R.string.video_speed_custom)
+                    else -> null
+                },
+                selected = same(picked, s),
+            ) {
+                if (!open) return@DropRow
+                picked = s
+                state.commitSpeed(s)
+                scope.launch { delay(420); currentClose() }
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        DropRow(title = stringResource(R.string.video_speed_every_video), tag = null, selected = PlaybackSpeed.remember) { if (open) state.toggleRememberSpeed() }
+    }
+}
+
+/** 0.5–3×, the ruler's range. */
+private val SpeedPresets = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
+
+/**
+ * The card both pickers share ([shown] from [dropShown]): the overlay's glass, hanging 8 dp under its pill ([anchor], in this box's pixels;
+ * [boxHeight] = that box's), right edges aligned, popping out of the pill. It scrolls when the rows are taller than the
+ * room above the scrubber, opening scrolled to row [openAt] (centred). A tap anywhere else (a layer BEHIND the card,
+ * which keeps its own touches) closes it; Back too (VideoContent).
+ */
+/** How far a card is out (0 gone … 1 open); its state starts over each time it opens from 0. */
+@Composable
+private fun dropShown(open: Boolean): Float {
+    val reduced = rememberReducedMotion()
+    val shown by animateFloatAsState(
+        targetValue = if (open) 1f else 0f,
+        animationSpec = if (reduced) tween(0) else if (open) tween(420, easing = Motion.Pop) else tween(220, easing = Motion.Exit),
+        label = "overlayDrop",
+    )
+    return shown
+}
+
+@Composable
+private fun BoxScope.OverlayDrop(
+    open: Boolean,
+    shown: Float,
+    anchor: Rect,
+    boxHeight: Float,
+    title: String,
+    openAt: () -> Int,
+    onClose: () -> Unit,
+    rows: @Composable ColumnScope.(CoroutineScope) -> Unit,
+) {
+    val currentClose by androidx.compose.runtime.rememberUpdatedState(onClose)
+    if (open) {
+        Box(
+            Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitEachGesture {
+                    // Everything this touch does is taken, so a tap beside the card only closes it.
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                    currentClose()
+                }
+            },
+        )
+    }
+    val density = LocalDensity.current
+    val gap = with(density) { 8.dp.toPx() }
+    val width = with(density) { DropWidth.toPx() }
+    // Never over the time row and scrubber.
+    val room = with(density) { (boxHeight - anchor.bottom - gap).toDp() } - DropBottomReserve
+    val scope = rememberCoroutineScope()
+    val scroll = rememberScrollState()
+    LaunchedEffect(Unit) {
+        // Open scrolled to the chosen row, centred when the list scrolls.
+        withFrameNanos { }
+        val index = openAt().coerceAtLeast(0)
+        val row = with(density) { (DropRowHeight + DropRowGap).toPx() }
+        val top = with(density) { DropHeaderHeight.toPx() } + index * row
+        scroll.scrollTo((top - (scroll.viewportSize - row) / 2f).roundToInt().coerceAtLeast(0))
+    }
+    Column(
+        Modifier
+            .offset { IntOffset((anchor.right - width).roundToInt(), (anchor.bottom + gap).roundToInt()) }
+            .width(DropWidth)
+            .heightIn(max = room.coerceAtLeast(DropHeaderHeight + DropRowHeight * 2))
+            .graphicsLayer {
+                val s = 0.4f + 0.6f * shown
+                scaleX = s
+                scaleY = s
+                alpha = (shown * 3f).coerceIn(0f, 1f)
+                // Grows out of the pill, from under its middle.
+                transformOrigin = TransformOrigin(1f - anchor.width / 2f / size.width, -10.dp.toPx() / size.height)
+                shape = RoundedCornerShape(22.dp)
+                clip = true
+            }
+            .background(Color(0xFF121216).copy(alpha = 0.72f))
+            .verticalScroll(scroll)
+            .padding(6.dp),
+    ) {
+        Text(
+            title,
+            color = Color.White.copy(alpha = 0.55f), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.6.sp,
+            maxLines = 1,
+            modifier = Modifier.height(DropHeaderHeight).padding(start = 12.dp, top = 6.dp),
+        )
+        rows(scope)
+    }
+}
+
+@Composable
+private fun DropRow(title: String, tag: String?, selected: Boolean, onClick: () -> Unit) {
+    val reduced = rememberReducedMotion()
+    val check by animateFloatAsState(
+        if (selected) 1f else 0f,
+        if (reduced) tween(0) else if (selected) tween(380, easing = Motion.Pop) else tween(150),
+        label = "dropCheck",
+    )
+    val fill by animateFloatAsState(if (selected) 0.16f else 0f, tween(if (reduced) 0 else 250), label = "dropFill")
+    Row(
+        Modifier
+            .padding(bottom = DropRowGap)
+            .fillMaxWidth()
+            .height(DropRowHeight)
+            .pressable(pressedScale = 0.97f, onClick = onClick)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = fill))
+            .padding(start = 12.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            tag.orEmpty(),
+            color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Rounded.Check, if (selected) stringResource(R.string.video_selected) else null, tint = Color.White,
+            modifier = Modifier.size(18.dp).graphicsLayer {
+                scaleX = 0.3f + 0.7f * check
+                scaleY = 0.3f + 0.7f * check
+                alpha = check.coerceIn(0f, 1f)
+            },
+        )
+    }
+}
+
+private val DropWidth = 184.dp
+private val DropRowHeight = 38.dp
+private val DropRowGap = 1.dp
+private val DropHeaderHeight = 24.dp
+/** Kept clear under the card: the time row and the scrubber. */
+private val DropBottomReserve = 64.dp
+
 /** A labelled pill in the controls' top row (chapters, speed, quality), the same glass as the buttons. */
 @Composable
 private fun ControlPill(label: String, enabled: Boolean, onClick: () -> Unit) {
@@ -1047,7 +1561,6 @@ private fun ControlPill(label: String, enabled: Boolean, onClick: () -> Unit) {
     ) { Text(label, color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Black) }
 }
 
-private const val SeekStepMs = 10_000L
 /** A burst stays open this long after its last tap; further taps on that side add to it. */
 private const val SeekBurstWindowMs = 600L
 

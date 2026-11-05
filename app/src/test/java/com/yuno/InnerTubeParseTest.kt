@@ -196,33 +196,4 @@ class InnerTubeParseTest {
         assertEquals(0L, InnerTube.parseViews("No views"))
         assertEquals(-1L, InnerTube.parseViews(null))
     }
-
-    @Test fun channelHeaderFromVideosTab() {
-        val meta = InnerTube.parseChannelHeader(fixture("channel_videos"))
-        assertEquals("lessbitter", meta?.handle)
-        assertEquals(21_000L, meta?.subscribers)
-        assertEquals(27L, meta?.videoCount)
-        assertEquals(false, meta?.verified)
-    }
-
-    @Test fun channelVerifiedFromHeaderBadge() {
-        val header = org.json.JSONObject(
-            """{"pageHeaderRenderer":{"content":{"pageHeaderViewModel":{"title":{"dynamicTextViewModel":{}}}}},
-               "c4TabbedHeaderRenderer":{"badges":[{"metadataBadgeRenderer":{"style":"BADGE_STYLE_TYPE_VERIFIED"}}]}}""",
-        )
-        assertTrue(InnerTube.parseChannelVerified(header))
-    }
-
-    @Test fun channelVerifiedFromTitleAccessibilityLabel() {
-        val header = JSONObject(
-            """{"pageHeaderRenderer":{"content":{"pageHeaderViewModel":{"title":{"dynamicTextViewModel":{
-                "rendererContext":{"accessibilityContext":{"label":"MrBeast, Verified"}}
-            }}}}}}}""",
-        )
-        assertTrue(InnerTube.parseChannelVerified(header))
-        val meta = InnerTube.parseChannelHeader(
-            JSONObject().put("header", header).put("responseContext", JSONObject()),
-        )
-        assertEquals(true, meta?.verified)
-    }
 }

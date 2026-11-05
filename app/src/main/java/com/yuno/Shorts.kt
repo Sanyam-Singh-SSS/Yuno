@@ -7,6 +7,24 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.media3.exoplayer.SeekParameters
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.sin
+import kotlin.random.Random
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -108,12 +126,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.yuno.icons.YunoIcons
 import com.yuno.icons.SfIcons
@@ -220,6 +240,12 @@ object ShortsSetting {
  * seen. Created once per process ([YunoApplication]), so it keeps filling with the app in
  * the background.
  */
+/**
+ * Shorts to play in the pager instead of the feed ([ShortsState.openList]): a channel's, from
+ * [start]. [more] loads the page after [next] (null: the list ends there).
+ */
+class ShortsList(val items: List<VideoItem>, val start: Int, val next: String? = null, val more: (suspend (String) -> FeedPage)? = null)
+
 @Stable
 class ShortsState(context: Context, private val scope: CoroutineScope) {
     private val app = context.applicationContext
@@ -285,9 +311,13 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         private set
     var buffering by mutableStateOf(false)
         private set
-    /** How far into the short on screen, 0..1 (the line along the screen's bottom edge). */
+    /** How far into the short on screen, 0..1. */
     var progress by mutableFloatStateOf(0f)
         private set
+    /** Where a finger on the progress line has put the short on screen, 0..1; null while nobody scrubs. */
+    var scrub by mutableStateOf<Float?>(null)
+        private set
+    val durationMs: Long get() = assigned[index]?.exo?.duration?.takeIf { it > 0 } ?: 0L
     private var loop: Job? = null
     /** How many shorts past this one get a player loading them; 1 once the device runs out of video decoders. */
     private var maxAhead = 2
@@ -348,6 +378,47 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         playable = true, quality = null, qualities = emptyList(), aspect = aspect,
     )
 
+    // ── Someone's shorts (a channel's) in place of the feed ──
+
+    private class SavedFeed(val items: List<VideoItem>, val next: String?, val index: Int)
+    private var saved: SavedFeed? = null
+    private var listMore: (suspend (String) -> FeedPage)? = null
+    val inList get() = saved != null
+
+    fun openList(list: ShortsList) {
+        if (list.items.isEmpty()) return
+        if (saved == null) saved = SavedFeed(items, next, index)
+        bankJob?.cancel()
+        swapFeed(list.items, list.next, list.start.coerceIn(list.items.indices))
+        listMore = list.more
+    }
+
+    fun closeList() {
+        val back = saved ?: return
+        saved = null
+        swapFeed(back.items, back.next, back.index)
+        listMore = null
+    }
+
+    private fun swapFeed(list: List<VideoItem>, token: String?, at: Int) {
+        pageJob?.cancel()
+        loading = false
+        pool.forEach { it.exo.playWhenReady = false; it.free() }
+        assigned.clear()
+        glassFrames.clear()
+        samples.clear()
+        items = list
+        next = token
+        index = at
+        error = null
+        userPaused = false
+        progress = 0f
+        commentsOpen = false
+        channelMenu = false
+        feedVersion++
+        if (active) { markShown(); tick() }
+    }
+
     /** The tab opened: load the feed if there's none, and start playing where it was left. */
     fun enter(mainPlayerActive: Boolean = false) {
         if (active) return
@@ -383,8 +454,17 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         playing = false
         buffering = false
         pool.forEach { it.exo.playWhenReady = false }
-        // Next time it opens on a short not seen yet (the bank's next one), like YouTube.
-        if (current?.id in viewed && index < items.lastIndex) {
+        val back = saved
+        if (back != null) {
+            saved = null
+            listMore = null
+            pageJob?.cancel()
+            loading = false
+            items = back.items
+            next = back.next
+            index = back.index
+            feedVersion++
+        } else if (current?.id in viewed && index < items.lastIndex) {
             index++
             feedVersion++
         }
@@ -449,7 +529,8 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
     /** The pager settled on [page]. The short left behind rewinds, ready to play again. */
     fun select(page: Int) {
         if (page == index) return
-        assigned[index]?.exo?.let { it.playWhenReady = false; it.seekTo(0) }
+        assigned[index]?.exo?.let { it.playWhenReady = false; it.setSeekParameters(SeekParameters.EXACT); it.seekTo(0) }
+        scrub = null
         index = page
         userPaused = false
         progress = 0f
@@ -516,20 +597,20 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         val token = next ?: return
         if (loading || SystemClock.elapsedRealtime() - moreFailedAt < 10_000) return
         loading = true
+        val more = listMore
         pageJob = scope.launch {
-            runCatching { InnerTube.shorts(token) }
+            runCatching { more?.invoke(token) ?: InnerTube.shorts(token) }
                 .onSuccess { page ->
                     val seen = items.mapTo(HashSet()) { it.id }
                     items = items + page.videos.filter { seen.add(it.id) }
                     next = page.next
-                    ShortsBank.setNext(next)
+                    if (more == null) ShortsBank.setNext(next)
                 }
                 .onFailure {
                     if (it is CancellationException) throw it
                     Log.w(TAG, "shorts: next page failed", it)
                     moreFailedAt = SystemClock.elapsedRealtime()
-                    // A kept token can go stale (the bank's, from days ago): start a new sequence.
-                    if (items.isNotEmpty()) { next = null; ShortsBank.setNext(null); pendingFresh = true }
+                    if (more == null && items.isNotEmpty()) { next = null; ShortsBank.setNext(null); pendingFresh = true }
                 }
             loading = false
         }
@@ -594,7 +675,7 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         val now = assigned[cur]
         if (now != null && !now.prepared) prepare(now, "on screen")
         now?.capMs = Long.MAX_VALUE
-        pool.forEach { it.exo.playWhenReady = it === now && foreground && !userPaused && !covered }
+        pool.forEach { it.exo.playWhenReady = it === now && foreground && !userPaused && !covered && scrub == null }
         // The shorts after it: their first seconds once this one has a safe lead, all of each
         // once everything before it is loaded.
         // Nothing else starts until this short has played its first second: three players starting
@@ -630,7 +711,7 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
         playing = now?.exo?.isPlaying == true
         buffering = now != null && !failed.containsKey(curId) && (!now.prepared || now.exo.playbackState == Player.STATE_BUFFERING)
         val duration = now?.exo?.duration ?: 0L
-        progress = if (now != null && duration > 0) (now.exo.currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f
+        progress = scrub ?: if (now != null && duration > 0) (now.exo.currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f
         accountFor(curId)
         if (playing) joinHistory(curId)
     }
@@ -670,6 +751,7 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
      * loaded; elsewhere: the app's video isn't waiting on it). Runs every 1.5 s, app open or not.
      */
     private fun fillBank() {
+        if (saved != null) return
         val list = items
         if (list.isEmpty()) { if (!active && !loading && error == null) refresh(); return }
         if (pendingFresh) appendFresh()
@@ -804,14 +886,54 @@ class ShortsState(context: Context, private val scope: CoroutineScope) {
 
     fun toggleLike() {
         val id = current?.id ?: return
-        if (!Account.signedIn) { onMessage("Sign in to like Shorts."); return }
-        val before = accountStates[id] ?: return
+        if (!Account.signedIn) { onMessage(str(R.string.shorts_sign_in_to_like)); return }
+        // Not known yet (the answer is on its way): like it now, without waiting.
+        val before = accountStates[id] ?: VideoAccountState(LikeStatus.None, subscribed = null, channelId = null)
         val next = if (before.like == LikeStatus.Like) LikeStatus.None else LikeStatus.Like
         accountStates[id] = before.copy(like = next)
         scope.launch {
             runCatching { InnerTube.setLike(id, next) }
-                .onFailure { if (it !is CancellationException) { accountStates[id] = before; onMessage("Couldn't update your like.") } }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    accountStates[id]?.let { s -> accountStates[id] = s.copy(like = before.like) }
+                    onMessage(str(R.string.shorts_like_failed))
+                }
         }
+    }
+
+    /**
+     * Double tap on the short: likes it, never unlikes. True when it is liked now, so the page
+     * throws a thumb up; signed out it only says so.
+     */
+    fun likeFromTap(): Boolean {
+        val id = current?.id ?: return false
+        if (!Account.signedIn) { onMessage(str(R.string.shorts_sign_in_to_like)); return false }
+        if (accountStates[id]?.like != LikeStatus.Like) toggleLike()
+        return true
+    }
+
+    /**
+     * A finger on the progress line: the short waits, paused, on the frame under it. Seeks go
+     * to the nearest keyframe while it moves; [endScrub] lands exactly.
+     */
+    fun scrubTo(fraction: Float) {
+        val exo = assigned[index]?.exo ?: return
+        val f = fraction.coerceIn(0f, 1f)
+        if (scrub == null) exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+        scrub = f
+        progress = f
+        exo.duration.takeIf { it > 0 }?.let { exo.seekTo((f * it).toLong()) }
+        tick()
+    }
+
+    fun endScrub() {
+        val f = scrub ?: return
+        scrub = null
+        assigned[index]?.exo?.let { exo ->
+            exo.setSeekParameters(SeekParameters.EXACT)
+            exo.duration.takeIf { it > 0 }?.let { exo.seekTo((f * it).toLong()) }
+        }
+        tick()
     }
 
     fun toggleSubscribe() {
@@ -1098,7 +1220,7 @@ private class CappedLoadControl(
 /**
  * The Shorts tab: a vertical pager of full-bleed shorts. The app's normal tab bar stays
  * over it. Like, comments, share and the channel sit on the right; the progress line
- * sits just above the bar. [overlayBottom] keeps the title clear of that line.
+ * sits under the title. [overlayBottom] keeps that block clear of the tab bar.
  */
 @Composable
 fun ShortsScreen(
@@ -1119,27 +1241,11 @@ fun ShortsScreen(
                 },
         ) {
             when {
-                shorts.items.isNotEmpty() -> key(shorts.feedVersion) { ShortsPager(shorts, overlayBottom) }
+                shorts.items.isNotEmpty() -> key(shorts.feedVersion) { ShortsPager(shorts, overlayBottom, progress) }
                 shorts.error != null && !shorts.loading -> ShortsProblem(shorts.error.orEmpty(), onRetry = shorts::refresh)
                 else -> CircularProgressIndicator(color = Ink, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(36.dp))
             }
         }
-        // Just above the tab bar, inset from the sides.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = navClearance + 8.dp)
-                .fillMaxWidth()
-                .height(ProgressThickness)
-                .graphicsLayer { alpha = if (shorts.commentsOpen) 0f else 1f }
-                .drawBehind {
-                    val inset = 16.dp.toPx()
-                    val w = (size.width - 2 * inset).coerceAtLeast(0f)
-                    val ends = CornerRadius(size.height / 2f)
-                    drawRoundRect(Color.White.copy(alpha = 0.28f), Offset(inset, 0f), Size(w, size.height), ends)
-                    drawRoundRect(Ink, Offset(inset, 0f), Size(w * shorts.progress, size.height), ends)
-                },
-        )
         if (shorts.commentsOpen) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 CommentsPanel(shorts.comments, partialTop = maxHeight * 0.42f, onClose = { shorts.commentsOpen = false })
@@ -1148,8 +1254,6 @@ fun ShortsScreen(
         ShortsChannelMenu(shorts, bottom = overlayBottom + 52.dp, onChannel = onChannel)
     }
 }
-
-private val ProgressThickness = 2.5.dp
 
 /** Like, comments, share and the channel, down the right edge above the tab bar. */
 @Composable
@@ -1214,7 +1318,7 @@ private fun RailButton(enabled: Boolean, label: String, onClick: () -> Unit, con
 }
 
 @Composable
-private fun ShortsPager(shorts: ShortsState, overlayBottom: Dp) {
+private fun ShortsPager(shorts: ShortsState, overlayBottom: Dp, barProgress: () -> Float) {
     val pager = rememberPagerState(initialPage = shorts.index.coerceIn(0, (shorts.items.size - 1).coerceAtLeast(0))) { shorts.items.size }
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.collect { shorts.select(it) } }
     VerticalPager(
@@ -1223,29 +1327,50 @@ private fun ShortsPager(shorts: ShortsState, overlayBottom: Dp) {
         // The pages either side are composed, so their views (and loaded first frames) are ready mid-swipe.
         beyondViewportPageCount = 1,
         key = { shorts.items.getOrNull(it)?.id ?: it },
-    ) { page -> ShortPage(shorts, page, overlayBottom) }
+    ) { page -> ShortPage(shorts, page, overlayBottom, barProgress) }
 }
 
 @Composable
-private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
+private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp, barProgress: () -> Float) {
     val item = shorts.items.getOrNull(page) ?: return
     val details = shorts.details[item.id]
     val failure = shorts.failed[item.id]
     val aspect = shorts.aspects[item.id] ?: details?.aspect ?: (9f / 16f)
     val onScreen = shorts.index == page
     DisposableEffect(page) { onDispose { shorts.forgetPage(page) } }
-    Box(
+    // Wide windows (Rail 3): the short as big as the window allows, never cropped — full height,
+    // centred on a tablet, against the left edge on an open foldable (its details on the right page).
+    val window = LocalWindowLayout.current
+    // Thumbs thrown by double taps, each where its tap landed (GitHub #47).
+    val thumbs = remember { mutableStateListOf<TapThumb>() }
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInputTap(page) { if (shorts.index == page) shorts.togglePause() },
+            .shortTaps(
+                page,
+                onTap = { if (shorts.index == page) shorts.togglePause() },
+                onDoubleTap = { at -> if (shorts.index == page && shorts.likeFromTap()) thumbs += TapThumb(at) },
+            ),
     ) {
+        val wide = window.wide
+        val videoWidth = if (wide) minOf(maxWidth, maxHeight * aspect) else maxWidth
+        val videoStart = if (!wide || window.foldX != null) 0.dp else (maxWidth - videoWidth) / 2
+        if (wide) {
+            // Either side: the short's own colours, blurred and dimmed.
+            AsyncImage(
+                model = item.thumbnail, contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(48.dp).graphicsLayer { alpha = 0.55f },
+            )
+        }
         Box(Modifier.fillMaxSize().clipToBounds()) {
-            // Vertical shorts fill the screen (a little cropped at the sides); wider ones fit its width.
+            // Vertical shorts fill a phone's screen (a little cropped at the sides); wider ones fit its width.
             Box(
                 Modifier
-                    .fillMaxSize()
-                    .aspectFit(aspect, cover = aspect < 0.7f)
+                    .padding(start = videoStart)
+                    .width(videoWidth)
+                    .fillMaxHeight()
+                    .aspectFit(aspect, cover = !wide && aspect < 0.7f)
                     .onGloballyPositioned { shorts.videoRects[page] = Rect(it.positionInRoot(), it.size.toSize()) },
             ) {
                 AsyncImage(model = item.thumbnail, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -1261,19 +1386,107 @@ private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(330.dp)
                 .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0f), 0.35f to Color.Black.copy(alpha = 0.18f), 1f to Color.Black.copy(alpha = 0.62f))),
         )
+        // A finger on the progress line: the words make way for the time it lands on.
+        val scrubbing = onScreen && shorts.scrub != null
+        val reduced = rememberReducedMotion()
+        val swell by animateFloatAsState(
+            if (scrubbing) 1f else 0f,
+            if (reduced) tween(0) else spring(dampingRatio = 0.8f, stiffness = 900f),
+            label = "shortScrub",
+        )
         if (details != null) {
             val shade = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.3f), Offset(0f, 2f), 4f))
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 84.dp, bottom = overlayBottom)) {
-                Text(details.item.channel, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = shade)
+            // Wide: in the margin beside the short, a size up — the left one on a tablet (the glass bar
+            // has the right), the right page on an open foldable, above the bar.
+            val textPlace = when {
+                !wide -> Modifier.fillMaxWidth().padding(start = 16.dp, end = 84.dp, bottom = overlayBottom + LineRoom)
+                window.foldX != null -> Modifier.fillMaxWidth().padding(start = videoWidth + 28.dp, end = 28.dp, bottom = overlayBottom + 8.dp)
+                else -> Modifier.width(videoStart).padding(start = 32.dp, end = 32.dp, bottom = 40.dp)
+            }
+            Column(Modifier.align(Alignment.BottomStart).then(textPlace).graphicsLayer { alpha = 1f - swell }) {
+                Text(details.item.channel, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = if (wide) 16.sp else 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, style = shade)
                 if (details.item.title.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(details.item.title, color = Ink, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, style = shade)
+                    Text(
+                        details.item.title, color = Ink, fontSize = if (wide) 19.sp else 14.sp, lineHeight = if (wide) 25.sp else 19.sp,
+                        fontWeight = if (wide) FontWeight.Bold else null, maxLines = if (wide) 5 else 3, overflow = TextOverflow.Ellipsis, style = shade,
+                    )
                 }
             }
         }
+        // How far in (#48): a line between the words and the glass bar (on a wide window, along the
+        // short's own bottom); drag along it, or tap it, to go anywhere in the short (#44).
+        val lineStart = if (wide) videoStart + LineInset else LineInset
+        val lineWidth = (if (wide) videoWidth else maxWidth) - LineInset * 2 - (if (wide) 0.dp else 56.dp)
+        val lineCentre = if (wide) LineWideBottom else overlayBottom - LineOverBar
+        val view = LocalView.current
+        if (scrubbing || swell > 0f) {
+            val at = shorts.scrub ?: shorts.progress
+            val length = shorts.durationMs
+            Text(
+                "${formatDuration((at * length).toLong())} / ${formatDuration(length)}",
+                color = Ink, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.45f), Offset(0f, 2f), 8f)),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = lineStart, bottom = lineCentre + LineTimeRaise)
+                    .width(lineWidth)
+                    .wrapContentWidth()
+                    .graphicsLayer { alpha = swell; translationY = (1f - swell) * 12.dp.toPx() },
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = lineStart, bottom = lineCentre - LineTouch / 2)
+                .width(lineWidth)
+                .height(LineTouch)
+                .graphicsLayer { alpha = ramp(barProgress(), 0.5f, 1f) }
+                .pointerInput(page) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (shorts.index != page || shorts.durationMs <= 0) return@awaitEachGesture
+                        fun at(x: Float) = (x / size.width).coerceIn(0f, 1f)
+                        val slop = viewConfiguration.touchSlop
+                        var moved = Offset.Zero
+                        var dragging = false
+                        try {
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    // A tap on the line jumps there; consumed, so it isn't also the page's pause.
+                                    if (!dragging) { change.consume(); shorts.scrubTo(at(change.position.x)) }
+                                    break
+                                }
+                                moved += change.positionChange()
+                                if (!dragging) {
+                                    // Up or down first: a swipe to the next short, the pager's.
+                                    if (abs(moved.y) > slop && abs(moved.y) >= abs(moved.x)) return@awaitEachGesture
+                                    if (abs(moved.x) <= slop) continue
+                                    dragging = true
+                                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                }
+                                change.consume()
+                                shorts.scrubTo(at(change.position.x))
+                            }
+                        } finally {
+                            shorts.endScrub()
+                        }
+                    }
+                }
+                .drawBehind {
+                    val thick = lerpF(LineThickness.toPx(), LineScrubThickness.toPx(), swell)
+                    val top = size.height / 2f - thick / 2f
+                    val ends = CornerRadius(thick / 2f)
+                    val fill = if (shorts.index == page) shorts.progress else 0f
+                    drawRoundRect(Color.White.copy(alpha = 0.3f), Offset(0f, top), Size(size.width, thick), ends)
+                    drawRoundRect(Ink, Offset(0f, top), Size(size.width * fill, thick), ends)
+                    if (swell > 0f) drawCircle(Ink, LineKnob.toPx() * swell, Offset(size.width * fill, size.height / 2f))
+                },
+        )
         when {
             failure != null -> Column(Modifier.align(Alignment.Center).padding(horizontal = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("This Short can't play", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(stringResource(R.string.shorts_cant_play_title), color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(failure, color = Ink.copy(alpha = 0.8f), fontSize = 13.5.sp, textAlign = TextAlign.Center)
             }
@@ -1290,13 +1503,207 @@ private fun ShortPage(shorts: ShortsState, page: Int, overlayBottom: Dp) {
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = overlayBottom),
             )
         }
+        thumbs.forEach { thumb -> key(thumb) { ThumbBurst(thumb, onDone = { thumbs.remove(thumb) }) } }
     }
 }
 
 /**
- * A tap that leaves the touch to the pager: nothing is consumed (detectTapGestures takes the
+ * Taps that leave the touch to the pager: nothing is consumed (detectTapGestures takes the
  * down, and a quick flick then came out as a tap that paused instead of a swipe), and a touch
- * that travels past touch slop is no tap.
+ * that travels past touch slop is no tap. A lone tap waits out the double-tap timeout; a second
+ * one within it is [onDoubleTap], and so is every further tap that follows as quickly (a run of
+ * thumbs, as on YouTube) — none of them pause.
+ */
+private fun Modifier.shortTaps(key: Any, onTap: () -> Unit, onDoubleTap: (Offset) -> Unit) =
+    this.then(
+        Modifier.pointerInput(key) {
+            val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
+            coroutineScope {
+                var pendingTap: Job? = null
+                var lastUp = Long.MIN_VALUE / 2
+                var liking = false
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+                    if ((up.position - down.position).getDistance() >= viewConfiguration.touchSlop ||
+                        up.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis
+                    ) return@awaitEachGesture
+                    val follows = down.uptimeMillis - lastUp < (if (liking) ThumbRunWindowMs else doubleTapMs)
+                    lastUp = up.uptimeMillis
+                    pendingTap?.cancel()
+                    if (follows) {
+                        liking = true
+                        onDoubleTap(up.position)
+                    } else {
+                        liking = false
+                        pendingTap = launch { delay(doubleTapMs); onTap() }
+                    }
+                }
+            }
+        },
+    )
+
+/** A run of double-tap thumbs carries on while each tap comes this soon after the last. */
+private const val ThumbRunWindowMs = 600L
+
+// The progress line (#48 / #44). Its centre sits [LineOverBar] under the words' bottom edge
+// (overlayBottom), 12 dp over the glass bar's top; the words move up [LineRoom] to make way.
+private val LineOverBar = 4.dp
+private val LineRoom = 14.dp
+private val LineInset = 16.dp
+/** On a wide window: up from the short's bottom edge. */
+private val LineWideBottom = 22.dp
+private val LineThickness = 3.dp
+private val LineScrubThickness = 6.dp
+private val LineKnob = 7.dp
+/** What a finger can grab: this tall, centred on the line. */
+private val LineTouch = 36.dp
+/** The time a scrub lands on: its bottom this far over the line. */
+private val LineTimeRaise = 34.dp
+
+/** One thumb thrown by a double tap made at [at] in the page, with its own handful of confetti. */
+private class TapThumb(val at: Offset) {
+    val confetti = List(ConfettiCount) { k ->
+        Confetto(
+            color = ConfettiColors[k % ConfettiColors.size],
+            round = k % 3 == 0,
+            // Up and out: anywhere from just above level on the left to just above level on the right.
+            angle = Math.toRadians(-170.0 + Random.nextDouble() * 160.0).toFloat(),
+            speed = 167f + Random.nextFloat() * 153f,
+            spin = -540f + Random.nextFloat() * 1080f,
+        )
+    }
+}
+
+/** A piece of confetti: thrown at [angle] (radians) at [speed] dp/s, turning [spin] degrees a second. */
+private class Confetto(val color: Color, val round: Boolean, val angle: Float, val speed: Float, val spin: Float)
+
+private val ThumbSize = 104.dp
+/**
+ * The thumb's centre sits this far above the tap, so the finger that tapped doesn't cover it
+ * (Derek, 2026-11-03: at the tap itself it hid under his fingertip). Its glyph's bottom edge
+ * then clears the touch by ~64 dp, past the fingertip's own reach above the contact point.
+ */
+private val ThumbAboveFinger = 96.dp
+/** Kept at least this far from the page's top when the tap is near it. */
+private val ThumbTopMargin = 24.dp
+
+// Derek picked "B · Confetti" in docs/design/shorts-double-tap.html (2026-11-03); these are its
+// numbers, in dp (the mockup drew 0.72 px per dp).
+private const val ThumbMs = 1100
+private const val ConfettiCount = 16
+private const val ConfettiDelayMs = 40
+private const val ConfettiFlightMs = 900
+/** Pulls the confetti back down, dp/s². */
+private const val ConfettiGravity = 722f
+private val ThumbRise = 42.dp
+private val ConfettiDot = 8.3.dp
+private val ConfettiStripW = 5.6.dp
+private val ConfettiStripH = 12.5.dp
+private val ConfettiColors = listOf(
+    Color(0xFFFF0033), Color(0xFFFFD000), Color(0xFF3EA6FF), Color(0xFFFF4FB8), Color(0xFF7CF29A), Color.White,
+)
+/** CSS "ease-out", which the mockup ran the thumb's whole timeline on. */
+private val ThumbEasing = CubicBezierEasing(0f, 0f, 0.58f, 1f)
+
+/** [keys] = position, value, position, value… (positions rising 0..1); straight lines between them. */
+private fun keyframe(p: Float, vararg keys: Float): Float {
+    var i = 2
+    while (i < keys.size - 2 && p > keys[i]) i += 2
+    val (p0, v0, p1, v1) = listOf(keys[i - 2], keys[i - 1], keys[i], keys[i + 1])
+    return if (p1 <= p0) v1 else v0 + (v1 - v0) * ((p - p0) / (p1 - p0)).coerceIn(0f, 1f)
+}
+
+/**
+ * The double-tap thumb: pops out just above the tap (overshoot, a small lean back and forth) while
+ * a handful of confetti bursts out of it and tumbles down under gravity; it holds, then floats up
+ * and fades. Layer transforms and drawing only. Reduced motion: the thumb just shows and fades.
+ */
+@Composable
+private fun ThumbBurst(thumb: TapThumb, onDone: () -> Unit) {
+    val reduced = rememberReducedMotion()
+    // Milliseconds since the tap: the thumb and every piece of confetti are read off this one clock.
+    val clock = remember { Animatable(0f) }
+    val fade = remember { Animatable(0f) }
+    val done by rememberUpdatedState(onDone)
+    LaunchedEffect(thumb) {
+        if (reduced) {
+            fade.animateTo(1f, tween(120))
+            delay(500)
+            fade.animateTo(0f, tween(220))
+        } else {
+            clock.animateTo(ThumbMs.toFloat(), tween(ThumbMs, easing = LinearEasing))
+        }
+        done()
+    }
+    val p = { ThumbEasing.transform((clock.value / ThumbMs).coerceIn(0f, 1f)) }
+    val thumbAlpha = { if (reduced) fade.value else keyframe(p(), 0f, 1f, 0.7f, 1f, 1f, 0f) }
+    val half = ThumbSize / 2
+    Box(
+        Modifier
+            .offset {
+                val y = maxOf(thumb.at.y - ThumbAboveFinger.toPx(), half.toPx() + ThumbTopMargin.toPx())
+                IntOffset((thumb.at.x - half.toPx()).roundToInt(), (y - half.toPx()).roundToInt())
+            }
+            .size(ThumbSize)
+            .drawBehind {
+                val c = center
+                // A soft shade under it, so a white thumb reads on a bright picture.
+                drawCircle(
+                    Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.22f * thumbAlpha()), Color.Black.copy(alpha = 0f)), c, size.minDimension * 0.62f),
+                    radius = size.minDimension * 0.62f, center = c,
+                )
+                if (reduced) return@drawBehind
+                val flight = (clock.value - ConfettiDelayMs) / ConfettiFlightMs
+                if (flight <= 0f || flight >= 1f) return@drawBehind
+                // Seconds in the air (0.9 s over the 900 ms flight), fading over its last 40%.
+                val t = flight * ConfettiFlightMs / 1000f
+                val alpha = if (flight < 0.6f) 1f else 1f - (flight - 0.6f) / 0.4f
+                val dp = density
+                thumb.confetti.forEach { piece ->
+                    val at = Offset(
+                        c.x + cos(piece.angle) * piece.speed * t * dp,
+                        c.y + (sin(piece.angle) * piece.speed * t + 0.5f * ConfettiGravity * t * t) * dp,
+                    )
+                    val color = piece.color.copy(alpha = alpha)
+                    if (piece.round) {
+                        drawCircle(color, radius = ConfettiDot.toPx() / 2f, center = at)
+                    } else {
+                        val w = ConfettiStripW.toPx()
+                        val h = ConfettiStripH.toPx()
+                        rotate(piece.spin * t, pivot = at) {
+                            drawRoundRect(color, Offset(at.x - w / 2f, at.y - h / 2f), Size(w, h), CornerRadius(2.dp.toPx()))
+                        }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            LikedGlyph, contentDescription = null, tint = Ink,
+            modifier = Modifier
+                .size(ThumbSize * 0.62f)
+                .optical(Mass.like, ThumbSize * 0.62f)
+                .graphicsLayer {
+                    if (reduced) {
+                        alpha = fade.value
+                        return@graphicsLayer
+                    }
+                    val q = p()
+                    val scale = keyframe(q, 0f, 0f, 0.18f, 1.2f, 0.32f, 0.97f, 0.7f, 1f, 1f, 1f)
+                    scaleX = scale; scaleY = scale
+                    rotationZ = keyframe(q, 0f, 0f, 0.18f, -8f, 0.32f, 3f, 0.7f, 0f, 1f, 0f)
+                    translationY = -keyframe(q, 0f, 0f, 0.7f, 0f, 1f, 1f) * ThumbRise.toPx()
+                    alpha = thumbAlpha()
+                    transformOrigin = TransformOrigin(0.5f, 0.7f)
+                },
+        )
+    }
+}
+
+/**
+ * The page's own TextureView, showing whichever pool player holds this page. Hidden until that
+ * player has drawn a frame of its short here, so a reused view never flashes an older picture.
  */
 private fun Modifier.pointerInputTap(key: Any, onTap: () -> Unit) =
     this.then(

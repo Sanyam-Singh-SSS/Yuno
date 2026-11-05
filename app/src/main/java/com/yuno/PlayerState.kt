@@ -49,6 +49,8 @@ class PlayerState(private val scope: CoroutineScope) {
     var loading by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
+    /** YouTube asked the player to confirm it isn't a bot ([SignInConfirmNotBotException]). */
+    var botCheck by mutableStateOf(false)
         private set
 
     var isPlaying by mutableStateOf(false)
@@ -83,7 +85,8 @@ class PlayerState(private val scope: CoroutineScope) {
             snapshotFlow { StreamRecovery.recovering to StreamRecovery.failed }.collect { (_, failed) ->
                 syncFromPlayer()
                 if (failed != null && failed.first == current?.id) {
-                    error = failed.second
+                    botCheck = failed.second is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
+                    error = YouTube.friendlyError(failed.second)
                     isBuffering = false
                 }
             }
@@ -199,6 +202,7 @@ class PlayerState(private val scope: CoroutineScope) {
         current = item
         details = null
         error = null
+        botCheck = false
         firstFrameRendered = false
         videoAspect = 16f / 9f
         aspectFromFrames = false
@@ -242,6 +246,7 @@ class PlayerState(private val scope: CoroutineScope) {
                     // video's outcome no longer matters, and the new load owns the state.
                     if (it is CancellationException) throw it
                     Log.w(TAG, "details failed for ${item.id}", it)
+                    botCheck = it is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
                     error = YouTube.friendlyError(it)
                     // Comments wait for details; without this their spinner never stopped.
                     comments.load(item.id)
@@ -319,6 +324,11 @@ class PlayerState(private val scope: CoroutineScope) {
         player.addMediaItem(mediaItemFor(item))
         actionMessage = "Added to queue"
         continueIfEnded(player)
+    }
+
+    /** The bar's Next: the queue's first video (the bar only offers it while the queue has one). */
+    fun playNextUp() {
+        if (queue.isNotEmpty()) playFromQueue(0)
     }
 
     /** The chapter playing at [ms], or null when the video has none. */
@@ -466,6 +476,42 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    fun notInterested(video: VideoItem) = sendFeedback(video, video.feedback?.notInterested, channel = false)
+
+    fun dontRecommendChannel(video: VideoItem) = sendFeedback(video, video.feedback?.dontRecommend, channel = true)
+
+    private fun sendFeedback(video: VideoItem, token: String?, channel: Boolean) {
+        token ?: return
+        Dismissed.hide(video, channel)
+        scope.launch {
+            runCatching { InnerTube.sendFeedback(token) }
+                .onSuccess { actionMessage = if (channel) "Channel hidden from recommendations" else "Got it — we'll show fewer like this" }
+                .onFailure {
+                    Dismissed.restore(video, channel)
+                    actionMessage = "Couldn't send feedback."
+                    Log.w(TAG, "feedback for ${video.id} (channel: $channel)", it)
+                }
+        }
+    }
+
+    /** A pinch in fullscreen, for one video: its id and whether it fills the screen. */
+    private var zoomFor by mutableStateOf<Pair<String, Boolean>?>(null)
+
+    /** Whether the current video fills the screen in fullscreen: its own pinch, else [FullscreenZoom.fill]. */
+    val zoomedToFill: Boolean
+        get() = zoomFor?.takeIf { it.first == current?.id }?.second ?: FullscreenZoom.fill
+
+    /** A pinch out ([fill]) or in: for this video only; the next one starts from the setting again. */
+    fun setZoomedToFill(fill: Boolean) {
+        zoomFor = current?.id?.let { it to fill }
+    }
+
+    /** The setting changed: it wins over a pinch made before, the playing video's too. */
+    fun setZoomFillSetting(on: Boolean) {
+        FullscreenZoom.set(on)
+        zoomFor = null
+    }
+
     // ── Save to playlist (GitHub issue #12) ──
     /** The video the "Save to playlist" sheet is open for; null = closed. */
     var playlistTarget by mutableStateOf<VideoItem?>(null)
@@ -555,6 +601,21 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** Fresh links too: the cached ones may be exactly what YouTube refused. */
     fun retry() = current?.let { item -> StreamCache.invalidate(item.id); current = null; open(item) }
+
+    /** The video in YouTube's own app, from where it stopped. */
+    fun openInYouTube(context: android.content.Context) {
+        val item = current ?: return
+        val seconds = positionMs / 1000
+        val url = YouTube.watchUrl(item.id) + if (seconds > 0) "&t=${seconds}s" else ""
+        try {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: android.content.ActivityNotFoundException) {
+            actionMessage = str(R.string.settings_no_app)
+        }
+    }
 
     fun togglePlay() {
         val player = controller ?: return
@@ -724,6 +785,7 @@ class PlayerState(private val scope: CoroutineScope) {
         current = null
         details = null
         error = null
+        botCheck = false
         loading = false
         blankUntilFrame = false
         captions.clear()

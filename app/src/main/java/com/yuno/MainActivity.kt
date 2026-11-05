@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.Manifest
 import android.app.Activity
@@ -164,11 +164,11 @@ class MainActivity : ComponentActivity() {
  * [YunoIcons.TabLibrary] cover three quarters - so [iconScale] shrinks the
  * other three to Home's optical area instead of letting them run to the edges.
  */
-enum class Tab(val label: String, val icon: ImageVector, val iconScale: Float = 1f) {
-    Home("Home", YunoIcons.Home),
-    Shorts("Shorts", SfIcons.Shorts, 0.85f),
-    Subscriptions("Subscriptions", SfIcons.Subscriptions, 1.08f),
-    Library("Library", YunoIcons.TabLibrary, 0.84f),
+enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector, val iconScale: Float = 1f) {
+    Home("Home", YunoIcons.Home, YunoIcons.Home),
+    Shorts("Shorts", SfIcons.Shorts, SfIcons.Shorts, 0.85f),
+    Subscriptions("Subscriptions", SfIcons.Subscriptions, SfIcons.Subscriptions, 1.08f),
+    Library("Library", YunoIcons.TabLibrary, YunoIcons.TabLibrary, 0.84f),
 }
 
 /** Backdrop the nav samples for liquid glass. */
@@ -612,7 +612,7 @@ fun YunoApp() {
         }
         CompositionLocalProvider(LocalContext provides playerSheetContext) {
             NowPlayingSheet(
-                visible = showNowPlaying,
+                visible = showNowPlaying && !pip.active,
                 fullscreen = showFullscreen,
                 player = player,
                 motion = playerSheetMotion,
@@ -746,7 +746,6 @@ fun YunoApp() {
         player.playlistTarget?.let { video ->
             SaveToPlaylistSheet(player, video, maxHeight = maxHeight * 0.55f)
         }
-        optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
         windowLayout.tabletopY?.takeIf { tabletop && showNowPlaying }?.let { fold ->
             with(density) { TabletopPlayer(player, foldTop = fold.start.toDp(), foldBottom = fold.endInclusive.toDp()) }
         }
@@ -756,7 +755,10 @@ fun YunoApp() {
         }
         if (pip.active) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
-                sharedSurface(Modifier.fillMaxSize().aspectFit(player.videoAspect))
+                Box(Modifier.fillMaxSize().aspectFit(player.videoAspect)) {
+                    sharedSurface(Modifier.fillMaxSize())
+                    CaptionLayer(player, bottom = 4.dp)
+                }
             }
         }
         VideoHeldMenu(
