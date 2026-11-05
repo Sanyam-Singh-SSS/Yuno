@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.view.accessibility.CaptioningManager
 import androidx.compose.animation.core.animateFloatAsState

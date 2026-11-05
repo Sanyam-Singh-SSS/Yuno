@@ -1,8 +1,9 @@
-package com.yuno
+﻿package com.yuno
 
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
@@ -44,6 +45,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -105,6 +111,7 @@ class MainActivity : ComponentActivity() {
             // exit: nothing is held, and the page shows as soon as it is ready.
             splashScreen.setOnExitAnimationListener { it.remove() }
         }
+        AppLanguage.refresh()
         // One window at a time (one player, one video texture): a newer one closes the one before.
         // That's a bubble opened while the app is open, or the app opened from Home while it sits
         // in a bubble (the bubble then goes away). Its task goes too, so Recents keeps no stale card;
@@ -118,7 +125,14 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        NewVideos.takeVideo(intent)?.let { NewVideos.opening = it }
         setContent { YunoTheme { YunoApp() } }
+    }
+
+    /** A new-video notification tapped while this window is open (singleTop). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        NewVideos.takeVideo(intent)?.let { NewVideos.opening = it }
     }
 
     override fun onStart() {
@@ -186,7 +200,9 @@ fun YunoApp() {
     val player = rememberPlayerState()
     val scope = rememberCoroutineScope()
     val search = remember { SearchState(scope) }
-    val lib = remember { LibraryData(scope) }
+    val appContext = LocalContext.current.applicationContext
+    val lib = remember { LibraryData(scope, appContext) }
+    LaunchedEffect(Account.signedIn) { if (Account.signedIn) lib.warmUp() }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<PlaylistRef?>(null) }
     var openChannel by remember { mutableStateOf<String?>(null) }
@@ -200,8 +216,21 @@ fun YunoApp() {
     // Shorts: its own feed and players; ‹ (and Back) return to the tab it was opened from.
     // One per process (YunoApplication), so its bank keeps filling with no window open.
     val shorts = (LocalContext.current.applicationContext as YunoApplication).shorts
-    DisposableEffect(shorts) { onDispose { shorts.leave() } }
+    val host = LocalContext.current as Activity
+    val windowLayout = rememberWindowLayout(host)
+    val wide = windowLayout.wide
+    DisposableEffect(shorts) { onDispose { if (!host.isChangingConfigurations) shorts.leave() } }
     var shortsFrom by rememberSaveable { mutableStateOf(Tab.Home) }
+    var shortsBackTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var shortsListOnTab by rememberSaveable { mutableStateOf(false) }
+    var playlistOverChannel by remember { mutableStateOf(false) }
+    LaunchedEffect(NewVideos.opening) {
+        val video = NewVideos.opening ?: return@LaunchedEffect
+        NewVideos.opening = null
+        settingsOpen = false
+        if (tab == Tab.Shorts) tab = shortsFrom
+        player.open(video)
+    }
     // Bumped when the already-selected tab is tapped; that tab's list scrolls to the top.
     val scrollToTop = remember { mutableStateMapOf<Tab, Int>() }
     val reduced = rememberReducedMotion()
@@ -224,14 +253,6 @@ fun YunoApp() {
     // flashing the page fully open and then clearing it.
     playerSheetMotion.windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     LaunchedEffect(player.current?.id) { HeldFrame.image = null }
-
-    LaunchedEffect(Unit) {
-        val video = NewVideos.opening ?: return@LaunchedEffect
-        NewVideos.opening = null
-        settingsOpen = false
-        if (tab == Tab.Shorts) tab = shortsFrom
-        player.open(video)
-    }
 
     // The screen stays on while a video plays
     val rootView = LocalView.current
@@ -257,7 +278,9 @@ fun YunoApp() {
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> { player.setBackground(true); shorts.setForeground(false) }
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> if (!host.isChangingConfigurations) {
+                    player.setBackground(true); shorts.setForeground(false)
+                }
                 androidx.lifecycle.Lifecycle.Event.ON_START -> { player.setBackground(false); shorts.setForeground(true) }
                 else -> Unit
             }
@@ -275,41 +298,77 @@ fun YunoApp() {
     // On Shorts the app's video waits, paused, out of sight (no mini-player).
     val glassOn = LiquidGlassSetting.enabled && isGlassSupported()
     val hasMini = player.current != null && tab != Tab.Shorts && !glassOn
-    // List bottom padding: 210 while a video is up, 140 otherwise.
-    val contentPadding = PaddingValues(
-        bottom = if (player.current != null && tab != Tab.Shorts) ListBottomPlaying else ListBottomIdle,
-    )
+    val contentPadding = if (wide) {
+        PaddingValues(bottom = stackBottom + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 16.dp)
+    } else {
+        PaddingValues(bottom = if (player.current != null && tab != Tab.Shorts) ListBottomPlaying else ListBottomIdle)
+    }
+    val railStart = WindowInsets.safeDrawing.only(WindowInsetsSides.Start).asPaddingValues()
+        .calculateStartPadding(LayoutDirection.Ltr)
+    val showRail = wide && tab != Tab.Shorts
+    val pagesStart = if (showRail) RailWidth + railStart else 0.dp
 
     // Fullscreen is whenever the open player is shown in landscape (rotation or button).
     val activity = LocalContext.current as Activity
     val orientation = rememberOrientationController(activity as ComponentActivity)
     val playerOpen = showNowPlaying && player.current != null
-    // In split screen this is the pane's shape, not the phone's.
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val config = LocalConfiguration.current
+    val windowLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val landscape = remember(windowLandscape, config.screenWidthDp, config.screenHeightDp, config.densityDpi, orientation.multiWindow) {
+        if (!orientation.multiWindow && activity.onSquareScreen()) activity.turnedSideways() else windowLandscape
+    }
     // Audio only has no picture to go fullscreen with: the open player stays portrait.
     orientation.Bind(playerOpen && !AudioOnly.enabled, landscape)
     val pip = remember(activity) { PipController(activity) }
     // Closing the picture-in-picture window pauses (expanding it just comes back).
     pip.Bind(onClosed = { player.controller?.pause() })
+    pip.AutoEnter(AutoPip.on && player.isPlaying && player.current != null && !AudioOnly.enabled, player.videoAspect)
     // The PiP window can be any shape: hold whatever was showing when it opened.
     val fullscreenBeforePip = remember { mutableStateOf(false) }
-    val showFullscreen = if (pip.active) fullscreenBeforePip.value else orientation.showsFullscreen(playerOpen, landscape)
+    val tabletop = windowLayout.tabletopY != null && playerOpen && !pip.active
+    val showFullscreen = !tabletop && if (pip.active) fullscreenBeforePip.value else orientation.showsFullscreen(playerOpen, landscape)
     SideEffect { if (!pip.active) fullscreenBeforePip.value = showFullscreen }
     LaunchedEffect(showFullscreen) { player.fullscreen = showFullscreen }
-    SystemBarsHidden(showFullscreen)
+    SystemBarsHidden(showFullscreen || tabletop)
     // A vertical video's fullscreen stays upright (Fullscreen.kt).
     fun toggleFullscreen() = if (showFullscreen) orientation.exitFullscreen() else orientation.enterFullscreen(vertical = player.videoAspect < 1f)
+
+    fun showChannel(url: String) {
+        player.expanded = false
+        showNowPlaying = false
+        if (channelState?.url != url) channelState = ChannelState(url, scope)
+        playlistOverChannel = false
+        openChannel = url
+    }
+
+    fun openShorts(list: ShortsList) {
+        shortsBackTo = openChannel
+        shortsListOnTab = tab == Tab.Shorts
+        openChannel = null
+        shorts.openList(list)
+        if (tab != Tab.Shorts) { shortsFrom = tab; tab = Tab.Shorts }
+    }
+
+    fun leaveShorts() {
+        val back = shortsBackTo
+        shortsBackTo = null
+        when {
+            back == null -> tab = shortsFrom
+            !shortsListOnTab -> { tab = shortsFrom; showChannel(back) }
+            else -> { showChannel(back); shorts.cover(true); shorts.closeList() }
+        }
+    }
 
     BackHandler(enabled = showNowPlaying) {
         if (reduced) showNowPlaying = false else playerSheetMotion.close()
     }
     BackHandler(enabled = !showNowPlaying && openSearch) { openSearch = false }
     BackHandler(enabled = !showNowPlaying && tab != Tab.Home && openPlaylist == null && openChannel == null && !openSearch) {
-        tab = if (tab == Tab.Shorts) shortsFrom else Tab.Home
+        if (tab == Tab.Shorts) leaveShorts() else tab = Tab.Home
     }
     BackHandler(enabled = !showNowPlaying && openPlaylist != null) { openPlaylist = null }
     BackHandler(enabled = signingIn) { signingIn = false }
-    BackHandler(enabled = !showNowPlaying && openChannel != null) { openChannel = null }
+    BackHandler(enabled = !showNowPlaying && openChannel != null && !(playlistOverChannel && openPlaylist != null)) { openChannel = null }
     BackHandler(enabled = tab == Tab.Shorts && shorts.commentsOpen) { shorts.commentsOpen = false }
     // Registered last so it wins: in fullscreen, Back returns to the portrait player first.
     BackHandler(enabled = showFullscreen) { orientation.exitFullscreen() }
@@ -318,6 +377,11 @@ fun YunoApp() {
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val density = LocalDensity.current
+    val settingsAway by animateFloatAsState(
+        if (settingsOpen) 1f else 0f,
+        if (reduced) snap() else Motion.MoodiiSpatial(),
+        label = "settingsAway",
+    )
 
     // Shorts (Shorts.kt) play on their own players: the app's video pauses on the way in and
     // carries on, from the same spot in the mini-player, on the way out (Derek, 2026-10-28).
@@ -330,6 +394,7 @@ fun YunoApp() {
             player.controller?.pause()
             shorts.enter(mainPlayerActive = player.current != null)
         } else if (shorts.active) {
+            shortsBackTo = null
             shorts.leave()
             if (resumeMain) player.controller?.play()
             resumeMain = false
@@ -358,12 +423,6 @@ fun YunoApp() {
         }
     }
 
-    fun showChannel(url: String) {
-        // From the player: minimize it so the channel page is visible.
-        player.expanded = false
-        if (channelState?.url != url) channelState = ChannelState(url, scope)
-        openChannel = url
-    }
     // A channel opened from Shorts sits over the short, which waits paused.
     SideEffect { shorts.cover(tab == Tab.Shorts && openChannel != null) }
     BackHandler(enabled = tab == Tab.Shorts && shorts.channelMenu) { shorts.channelMenu = false }
@@ -405,12 +464,13 @@ fun YunoApp() {
                 optionsFor = video
             },
             LocalChannelOpener provides { url -> showChannel(url) },
+            LocalWindowLayout provides windowLayout,
             LocalAppHaze provides hazeState,
             LocalLiquidGlassEnabled provides glassOn,
             LocalAppBackdrop provides appBackdrop,
             LocalTopChrome provides topChrome,
         ) {
-        Box(Modifier.fillMaxSize().then(pageSample)) {
+        Box(Modifier.fillMaxSize().then(pageSample).padding(start = pagesStart)) {
         AnimatedContent(
             targetState = tab,
             transitionSpec = {
@@ -491,14 +551,42 @@ fun YunoApp() {
             channelState?.let { ch ->
                 ChannelScreen(
                     ch, contentPadding, onBack = { openChannel = null },
-                    barShown = openChannel != null,
-                    // A video from a channel opened in Shorts plays in the app's player: Shorts closes.
                     onOpen = { v -> if (tab == Tab.Shorts) tab = shortsFrom; player.open(v) },
+                    onOpenShorts = ::openShorts,
+                    onOpenPlaylist = { ref ->
+                        playlistOverChannel = openChannel != null
+                        openPlaylist = ref
+                    },
                     onMessage = { player.actionMessage = it },
                 )
             }
         }
         } // page backdrop (tabs + overlays)
+
+        if (showRail) {
+            NavRail(
+                selected = tab,
+                tabs = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled },
+                onSelect = { t ->
+                    player.expanded = false
+                    showNowPlaying = false
+                    when {
+                        t == tab && openSearch -> openSearch = false
+                        t == tab && openChannel != null -> openChannel = null
+                        t == tab && openPlaylist != null -> openPlaylist = null
+                        t == tab -> scrollToTop[t] = (scrollToTop[t] ?: 0) + 1
+                        else -> {
+                            if (t == Tab.Shorts) shortsFrom = tab
+                            openPlaylist = null
+                            openChannel = null
+                            openSearch = false
+                            tab = t
+                        }
+                    }
+                },
+                modifier = Modifier.graphicsLayer { alpha = 1f - settingsAway },
+            )
+        }
 
         // Stays put while the player opens and closes. The player is its own window,
         // so it covers these the way it covers the tab bar; removing them for
@@ -541,11 +629,6 @@ fun YunoApp() {
         }
 
         // The nav pill steps down out of the way of the comments panel (its composer sits there).
-        val settingsAway by animateFloatAsState(
-            if (settingsOpen) 1f else 0f,
-            if (reduced) snap() else Motion.MoodiiSpatial(),
-            label = "settingsAway",
-        )
         val navAside by animateFloatAsState(
             if ((player.sheet.isPanel && playerOpen) || shorts.commentsOpen) 1f else 0f,
             if (reduced) snap() else tween(280, easing = Motion.Emphasized), label = "navAside",
@@ -567,7 +650,7 @@ fun YunoApp() {
             }
         }
         val shownTabs = Tab.entries.filter { it != Tab.Shorts || ShortsSetting.enabled }
-        val glassChrome = glassOn
+        val glassChrome = glassOn && !wide
         if (glassChrome) {
             GlassNavBar(
                 tabs = shownTabs,
@@ -641,6 +724,7 @@ fun YunoApp() {
                 onClose = { settingsOpen = false },
                 onSignIn = { signingIn = true },
                 onSignedOut = { lib.reset(); player.refreshAccountState() },
+                wide = wide,
             )
         }
         if (signingIn) {
@@ -659,7 +743,13 @@ fun YunoApp() {
             PlayerSheet.Queue -> QueueSheet(player, onDismiss = { player.sheet = null })
             null -> Unit
         }
-        player.playlistTarget?.let { video -> SaveToPlaylistSheet(player, video) }
+        player.playlistTarget?.let { video ->
+            SaveToPlaylistSheet(player, video, maxHeight = maxHeight * 0.55f)
+        }
+        optionsFor?.let { video -> VideoOptionsSheet(video, player, onDismiss = { optionsFor = null }) }
+        windowLayout.tabletopY?.takeIf { tabletop && showNowPlaying }?.let { fold ->
+            with(density) { TabletopPlayer(player, foldTop = fold.start.toDp(), foldBottom = fold.endInclusive.toDp()) }
+        }
         // Confirmations ("Added to queue") when the full player isn't showing its own.
         if (!showNowPlaying) {
             QueueMessage(player, Modifier.align(Alignment.BottomCenter).padding(bottom = stackBottom + NavHeight + (if (hasMini) MiniHeight + MiniGap else 0.dp) + 12.dp))

@@ -15,13 +15,17 @@ import android.view.OrientationEventListener
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import android.os.Build
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -43,6 +47,17 @@ import androidx.core.view.WindowInsetsControllerCompat
  *  - A vertical video (taller than wide; GitHub issues #20/#22) goes fullscreen UPRIGHT: the
  *    button / swipe up keep the phone portrait and fill the screen. Turning the phone sideways
  *    then makes it ordinary landscape fullscreen (and turning it back exits, as usual).
+ *  - A near-square phone ([onSquareScreen]: keyboard phones like the Titan 2 Elite; GitHub #38)
+ *    does the same for every video: there's next to nothing to gain from turning it, and its owners
+ *    hold it upright. Turning it sideways still gives landscape fullscreen.
+ *  - Folding or unfolding (another screen) starts over from how the phone is held: a landscape
+ *    forced on the inner screen kept the cover screen sideways in fullscreen while it was held
+ *    upright, and only turning the phone sideways and back (with auto-rotate on) let go
+ *    (Z Fold 6 user, 2026-11-02).
+ *  - A large screen (tablet, open foldable; Adaptive.kt) is never held portrait and is laid out for
+ *    whichever way it's turned (the two-pane player, Rail 3). Turning it isn't fullscreen there:
+ *    as in split screen, the button / swipe up / Back toggle it, and it carries on across a turn
+ *    and from the cover screen to the open one.
  */
 @Stable
 class OrientationController(private val activity: ComponentActivity) {
@@ -53,9 +68,16 @@ class OrientationController(private val activity: ComponentActivity) {
 
     var multiWindow by mutableStateOf(activity.isInMultiWindowMode)
         private set
+    /** A tablet or an open foldable's inner screen ([onLargeScreen]). */
+    var largeScreen by mutableStateOf(activity.onLargeScreen())
+        private set
+    /** The pane's or the large screen's own shape decides, not the phone's: fullscreen is a choice there. */
+    private val free get() = multiWindow || largeScreen
     /** Split screen: fullscreen chosen with the button; null follows the pane's shape. */
     private var paneFullscreen by mutableStateOf<Boolean?>(null)
-    /** Fullscreen in portrait, for a vertical video; dropped once the window turns landscape. */
+    /** A near-square phone ([onSquareScreen]): fullscreen stays upright for every video. */
+    private var squareScreen by mutableStateOf(activity.onSquareScreen())
+    /** Fullscreen in portrait, for a vertical video or a square screen; dropped once the window turns landscape. */
     private var portraitFullscreen by mutableStateOf(false)
 
     private val listener = object : OrientationEventListener(activity) {
@@ -80,21 +102,22 @@ class OrientationController(private val activity: ComponentActivity) {
         !playerOpen -> false
         // Audio only has no picture to fill the pane with.
         multiWindow -> !AudioOnly.enabled && (paneFullscreen ?: landscape)
+        largeScreen -> !AudioOnly.enabled && paneFullscreen == true
         else -> landscape || (portraitFullscreen && !AudioOnly.enabled)
     }
 
-    /** [vertical]: the video is taller than wide, so fullscreen stays portrait. */
+    /** [vertical]: the video is taller than wide, so fullscreen stays portrait (as on a square screen). */
     fun enterFullscreen(vertical: Boolean) {
         when {
-            multiWindow -> paneFullscreen = true
-            vertical -> portraitFullscreen = true
+            free -> paneFullscreen = true
+            vertical || squareScreen -> portraitFullscreen = true
             else -> forced = Forced.Landscape
         }
     }
 
     fun exitFullscreen() {
         when {
-            multiWindow -> paneFullscreen = false
+            free -> paneFullscreen = false
             portraitFullscreen -> portraitFullscreen = false
             else -> forced = Forced.Portrait
         }
@@ -108,7 +131,7 @@ class OrientationController(private val activity: ComponentActivity) {
 
     fun apply() {
         activity.requestedOrientation = when {
-            multiWindow -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            free -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             !playerOpen -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             forced == Forced.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             forced == Forced.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -130,13 +153,28 @@ class OrientationController(private val activity: ComponentActivity) {
                 activity.removeOnMultiWindowModeChangedListener(windowListener)
             }
         }
-        // A pane that changes shape (the divider dragged) starts over from its new shape.
+        // A pane that changes shape (the divider dragged) starts over from its new shape. A large
+        // screen just turned keeps what was chosen.
         LaunchedEffect(landscape, multiWindow) {
-            paneFullscreen = null
+            if (multiWindow || !largeScreen) paneFullscreen = null
             // Turned sideways: from here it's landscape fullscreen, which turning back exits.
             if (landscape || multiWindow) portraitFullscreen = false
         }
-        LaunchedEffect(playerOpen, forced, multiWindow) { setPlayerOpen(playerOpen) }
+        // Another screen (fold / unfold): no forced side. Not the smallest width: on the near-square
+        // inner screen that changes with rotation too (the system bars come off it).
+        val config = LocalConfiguration.current
+        val screen = remember(config.screenWidthDp, config.screenHeightDp, config.densityDpi) { activity.screenSides() }
+        // Fullscreen as it was just before the screen changed: the open screen carries it on.
+        val wasFullscreen = remember { booleanArrayOf(false) }
+        LaunchedEffect(screen) {
+            forced = null
+            val large = activity.onLargeScreen()
+            if (large && !largeScreen) paneFullscreen = if (wasFullscreen[0]) true else null
+            largeScreen = large
+            squareScreen = activity.onSquareScreen()
+        }
+        SideEffect { wasFullscreen[0] = showsFullscreen(playerOpen, landscape) }
+        LaunchedEffect(playerOpen, forced, multiWindow, largeScreen) { setPlayerOpen(playerOpen) }
     }
 }
 
@@ -176,15 +214,40 @@ class PipController(private val activity: ComponentActivity) {
     /** False when the system refused (PiP switched off for the app in Settings). */
     fun enter(videoAspect: Float): Boolean {
         if (!supported) return false
+        return activity.enterPictureInPictureMode(params(videoAspect).build())
+    }
+
+    private fun params(videoAspect: Float): PictureInPictureParams.Builder {
         // Android accepts 1:2.39 to 2.39:1; anything outside it would throw.
         val ratio = videoAspect.coerceIn(0.42f, 2.38f)
-        val params = PictureInPictureParams.Builder()
+        return PictureInPictureParams.Builder()
             .setAspectRatio(Rational((ratio * 1000).toInt(), 1000))
             .apply {
                 videoBounds?.let { b -> setSourceRectHint(android.graphics.Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt())) }
             }
-            .build()
-        return activity.enterPictureInPictureMode(params)
+    }
+
+    /**
+     * Picture-in-picture by itself (#42, [AutoPip]): while [wanted] (a video playing with its picture),
+     * leaving the app turns it into the floating window. Android 12+ does it as part of the swipe home
+     * (auto-enter); older versions on the user-leave hint (Home / Recents pressed).
+     */
+    @Composable
+    fun AutoEnter(wanted: Boolean, videoAspect: Float) {
+        if (!supported) return
+        val currentWanted by rememberUpdatedState(wanted)
+        val currentAspect by rememberUpdatedState(videoAspect)
+        if (Build.VERSION.SDK_INT >= 31) {
+            LaunchedEffect(wanted, videoAspect) {
+                activity.setPictureInPictureParams(params(videoAspect).setAutoEnterEnabled(wanted).build())
+            }
+        } else {
+            DisposableEffect(activity) {
+                val listener = Runnable { if (currentWanted && !active) enter(currentAspect) }
+                activity.addOnUserLeaveHintListener(listener)
+                onDispose { activity.removeOnUserLeaveHintListener(listener) }
+            }
+        }
     }
 
     @Composable

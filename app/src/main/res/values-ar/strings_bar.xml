@@ -1,11 +1,9 @@
-﻿<resources>
+<resources>
     <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
     <!-- Accessibility labels of the bar's play button. -->
     <string name="bar_play">تشغيل</string>
     <string name="bar_pause">إيقاف مؤقت</string>
     <!-- Accessibility labels of the bar's seek buttons. -->
-    <string name="bar_back_10">رجوع 10 ثوانٍ</string>
-    <string name="bar_forward_10">تقديم 10 ثوانٍ</string>
     <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
     <string name="bar_more_controls">عناصر تحكم إضافية</string>
     <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
@@ -55,7 +53,7 @@
     <string name="bar_transcript">نص الفيديو</string>
 
     <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
-    <string name="bar_pip_off">ميزة نافذة ضمن النافذة غير مفعّلة لتطبيق Yuno في الإعدادات.</string>
+<string name="bar_pip_off">ميزة نافذة ضمن النافذة غير مفعّلة لتطبيق Yuno في الإعدادات.</string>
 
     <!-- Pill above the scrub preview: let go here to not jump. Short. -->
     <string name="bar_cancel">إلغاء</string>

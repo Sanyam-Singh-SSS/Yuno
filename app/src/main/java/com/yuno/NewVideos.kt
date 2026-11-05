@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -46,7 +46,7 @@ internal data class FeedEntry(val id: String, val title: String, val publishedMs
  * The worker also runs the daily bell sync (Bells.syncIfDue). Logs "new videos: …".
  */
 object NewVideos {
-    private const val TAG = "Skipii"
+    private const val TAG = "Yuno"
     private const val WORK = "new-videos"
     private const val CHANNEL = "new_videos"
     private const val KEEP_SEEN = 30
@@ -245,7 +245,7 @@ object NewVideos {
             .putExtra(EXTRA_CHANNEL_ID, ch.id)
             .putExtra(EXTRA_AVATAR, ch.avatar)
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_yuno)
+            .setSmallIcon(R.drawable.ic_stat_skipii)
             .setContentTitle(channelName)
             .setContentText(entry.title)
             .setWhen(entry.publishedMs)
@@ -295,7 +295,7 @@ object NewVideos {
 /** The 15-minute pass: the daily bell sync (signed in), then the feeds. Signing out clears the bells. */
 class NewVideoWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        runCatching { Bells.syncIfDue() }.onFailure { Log.w("Skipii", "bells: sync failed (${it.message})") }
+        runCatching { Bells.syncIfDue() }.onFailure { Log.w("Yuno", "bells: sync failed (${it.message})") }
         withContext(Dispatchers.IO) { NewVideos.check(applicationContext) }
         return Result.success()
     }

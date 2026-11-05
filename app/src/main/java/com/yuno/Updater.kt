@@ -87,7 +87,7 @@ import java.util.Locale
 object AppUpdate {
     private const val TAG = "Yuno"
     /** Newest first; enough to cover the notes of every release a phone may have skipped. */
-    private const val RELEASES_URL = "https://api.github.com/repos/deciocrytek/Yuno/releases?per_page=30"
+    private const val RELEASES_URL = "https://api.github.com/repos/danielkanan/Yuno/releases?per_page=30"
     private const val APK_ASSET = "Yuno.apk"
     private const val CHECK_EVERY_MS = 24 * 60 * 60 * 1000L
     /** A check that failed (offline, rate limit) tries again after this, not a day later. */

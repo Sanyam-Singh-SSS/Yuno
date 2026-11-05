@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_title">Настройки</string>
     <string name="settings_search">Поиск в настройках</string>
@@ -28,7 +28,7 @@
         <item quantity="other">%1$s канала с колокольчиком</item>
     </plurals>
     <string name="settings_bells_none">Колокольчики пока не включены</string>
-    <string name="settings_bells_empty">Включите колокольчик на кнопке «Подписаться» канала, и Yuno сообщит о каждом его новом видео.</string>
+<string name="settings_bells_empty">Включите колокольчик на кнопке «Подписаться» канала, и Yuno сообщит о каждом его новом видео.</string>
     <string name="settings_bell_line">Каждое новое видео</string>
     <string name="settings_system_notifications">Настройки уведомлений Android</string>
     <string name="settings_system_notifications_line">Звук, вибрация, «Не беспокоить»</string>
@@ -40,8 +40,27 @@
     <string name="settings_update_available">Доступна версия %1$s</string>
     <string name="settings_source">Исходный код на GitHub</string>
     <string name="settings_source_line">Сообщить о проблеме или предложить функцию</string>
+<string name="settings_crash_title">Отчёт о сбое</string>
+    <string name="settings_crash_saved">Сохранён после последнего сбоя. Поделитесь им и вставьте в issue на GitHub</string>
+    <string name="settings_crash_none">Сбоев не сохранено. Отправляет, как Android в последний раз закрыл Yuno, для issue на GitHub</string>
+    <string name="settings_crash_tile">Сохранён отчёт о сбое</string>
+    <string name="settings_crash_share">Поделиться отчётом о сбое</string>
     <string name="settings_made_by">Автор: %1$s</string>
     <string name="settings_say_hi">Заходите поздороваться</string>
     <string name="settings_email_developer">Написать разработчику</string>
     <string name="settings_no_app">На этом телефоне нет приложения, чтобы это открыть</string>
+<string name="settings_zoom_fill_title">Растягивать на весь экран</string>
+    <string name="settings_zoom_fill_on">Каждое видео заполняет экран, лишние края обрезаются. Сведите пальцы, чтобы увидеть видео целиком.</string>
+    <string name="settings_zoom_fill_off">Видео показываются целиком, с чёрными полосами. Разведите пальцы в полноэкранном режиме, чтобы заполнить экран.</string>
+    <string name="settings_zoom_fill_summary">растянуто на весь экран</string>
+    <string name="settings_seek_step_title">Перемотка назад и вперёд</string>
+    <string name="settings_seek_step_line">На сколько перематывают двойное касание видео и кнопки −/⁠+</string>
+    <string name="settings_seconds_short">%1$s с</string>
+    <string name="settings_seek_step_summary">Шаг %1$s с</string>
+    <string name="settings_music_normal_title">Музыка на обычной скорости</string>
+    <string name="settings_music_normal_line">Песни всегда играют на 1×, даже если скорость запомнена для всех видео</string>
+    <string name="settings_chapters_open_title">Не закрывать главы</string>
+    <string name="settings_chapters_open_line">После выбора главы список остаётся открытым, чтобы переходить от одной к другой</string>
+    <string name="settings_auto_pip_title">Картинка в картинке при выходе</string>
+    <string name="settings_auto_pip_line">Если выйти на главный экран во время видео, оно продолжит играть в маленьком окне</string>
 </resources>

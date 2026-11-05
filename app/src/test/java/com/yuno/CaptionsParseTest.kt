@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

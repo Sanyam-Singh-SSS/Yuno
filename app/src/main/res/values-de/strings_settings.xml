@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_title">Einstellungen</string>
     <string name="settings_search">Einstellungen durchsuchen</string>
@@ -26,7 +26,7 @@
         <item quantity="other">%1$s Kanäle mit aktivierter Glocke</item>
     </plurals>
     <string name="settings_bells_none">Noch keine Glocke aktiviert</string>
-    <string name="settings_bells_empty">Aktiviere die Glocke am Abonnieren-Button eines Kanals, und Yuno meldet dir jedes neue Video.</string>
+<string name="settings_bells_empty">Aktiviere die Glocke am Abonnieren-Button eines Kanals, und Yuno meldet dir jedes neue Video.</string>
     <string name="settings_bell_line">Jedes neue Video</string>
     <string name="settings_system_notifications">Android-Benachrichtigungseinstellungen</string>
     <string name="settings_system_notifications_line">Ton, Vibration, Bitte nicht stören</string>
@@ -38,8 +38,27 @@
     <string name="settings_update_available">Version %1$s ist verfügbar</string>
     <string name="settings_source">Quellcode auf GitHub</string>
     <string name="settings_source_line">Ein Problem melden oder eine Funktion wünschen</string>
+<string name="settings_crash_title">Absturzbericht</string>
+    <string name="settings_crash_saved">Vom letzten Absturz gespeichert. Teile ihn und füge ihn in ein GitHub-Issue ein</string>
+    <string name="settings_crash_none">Kein Absturz gespeichert. Teilt, wie Android Yuno zuletzt beendet hat, für ein GitHub-Issue</string>
+    <string name="settings_crash_tile">Absturzbericht gespeichert</string>
+    <string name="settings_crash_share">Absturzbericht teilen</string>
     <string name="settings_made_by">Gemacht von %1$s</string>
     <string name="settings_say_hi">Sag gern Hallo</string>
     <string name="settings_email_developer">E-Mail an den Entwickler</string>
     <string name="settings_no_app">Keine App auf diesem Telefon kann das öffnen</string>
+<string name="settings_zoom_fill_title">Im Vollbild zum Füllen zoomen</string>
+    <string name="settings_zoom_fill_on">Jedes Video füllt den Bildschirm; überstehende Ränder werden abgeschnitten. Zusammenziehen, um ein Video ganz zu sehen.</string>
+    <string name="settings_zoom_fill_off">Videos werden ganz gezeigt, mit schwarzen Balken. Im Vollbild auseinanderziehen, um den Bildschirm zu füllen.</string>
+    <string name="settings_zoom_fill_summary">zum Füllen gezoomt</string>
+    <string name="settings_seek_step_title">Zurück- und vorspulen</string>
+    <string name="settings_seek_step_line">Wie weit ein Doppeltippen aufs Video und die −/⁠+-Tasten springen</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Sprünge von %1$s s</string>
+    <string name="settings_music_normal_title">Musik in normaler Geschwindigkeit</string>
+    <string name="settings_music_normal_line">Songs laufen immer mit 1×, auch wenn eine Geschwindigkeit für alle Videos gemerkt ist</string>
+    <string name="settings_chapters_open_title">Kapitel offen lassen</string>
+    <string name="settings_chapters_open_line">Nach der Wahl eines Kapitels bleibt die Liste offen, so geht es von einem zum nächsten</string>
+    <string name="settings_auto_pip_title">Bild-im-Bild beim Verlassen</string>
+    <string name="settings_auto_pip_line">Wechselst du beim Abspielen zum Startbildschirm, läuft das Video in einem kleinen Fenster weiter</string>
 </resources>

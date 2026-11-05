@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <!-- Shorts tab: shown instead of the feed when YouTube sent no Shorts at all. -->
     <string name="shorts_none_offered">YouTube ne propose aucun Short pour le moment.</string>
     <!-- Shorts tab: shown on a short that failed to load or play (under shorts_cant_play_title). -->

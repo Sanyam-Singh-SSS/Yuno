@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -233,13 +233,18 @@ object CaptionSettings {
     /** The language captions are shown in when the video has it (or it can be translated into): the last picked, else the app's. */
     val language: String get() = pickedLanguage ?: appLanguage
 
-    /** The app's language (the one picked in Skipii, else the phone's): "When it isn't in English" compares the video's with this. */
+    /** The app's language (the one picked in Yuno, else the phone's): "When it isn't in English" compares the video's with this. */
     val appLanguage: String get() = AppLanguage.locale.language.ifBlank { "en" }
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("captions", Context.MODE_PRIVATE)
         show = prefs?.getString(KEY_SHOW, null)?.let { s -> Show.entries.firstOrNull { it.name == s } } ?: Show.Foreign
-        look = prefs?.getString(KEY_LOOK, null)?.let { s -> Look.entries.firstOrNull { it.name == s } } ?: Look.Yuno
+        look = prefs?.getString(KEY_LOOK, null)?.let { s ->
+            when (s) {
+                "Skipii" -> Look.Yuno
+                else -> Look.entries.firstOrNull { it.name == s }
+            }
+        } ?: Look.Yuno
         size = prefs?.getFloat(KEY_SIZE, 1f) ?: 1f
         pickedLanguage = prefs?.getString(KEY_LANGUAGE, null)
     }

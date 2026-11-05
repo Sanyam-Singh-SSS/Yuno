@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_title">Impostazioni</string>
     <string name="settings_search">Cerca nelle impostazioni</string>
@@ -27,7 +27,7 @@
         <item quantity="other">%1$s canali con la campanella attiva</item>
     </plurals>
     <string name="settings_bells_none">Ancora nessuna campanella attiva</string>
-    <string name="settings_bells_empty">Attiva la campanella sul pulsante Iscriviti di un canale e Yuno ti avvisa di ogni suo nuovo video.</string>
+<string name="settings_bells_empty">Attiva la campanella sul pulsante Iscriviti di un canale e Yuno ti avvisa di ogni suo nuovo video.</string>
     <string name="settings_bell_line">Ogni nuovo video</string>
     <string name="settings_system_notifications">Impostazioni di notifica di Android</string>
     <string name="settings_system_notifications_line">Suono, vibrazione, Non disturbare</string>
@@ -39,8 +39,27 @@
     <string name="settings_update_available">È disponibile la versione %1$s</string>
     <string name="settings_source">Codice sorgente su GitHub</string>
     <string name="settings_source_line">Segnala un problema o chiedi una funzione</string>
+<string name="settings_crash_title">Rapporto sugli arresti</string>
+    <string name="settings_crash_saved">Salvato dall\'ultimo arresto anomalo. Condividilo e incollalo in una issue su GitHub</string>
+    <string name="settings_crash_none">Nessun arresto salvato. Condivide come Android ha chiuso Yuno l\'ultima volta, per una issue su GitHub</string>
+    <string name="settings_crash_tile">Rapporto sugli arresti salvato</string>
+    <string name="settings_crash_share">Condividi il rapporto sugli arresti</string>
     <string name="settings_made_by">Creato da %1$s</string>
     <string name="settings_say_hi">Passa a salutare</string>
     <string name="settings_email_developer">Scrivi allo sviluppatore</string>
     <string name="settings_no_app">Nessuna app di questo telefono può aprirlo</string>
+<string name="settings_zoom_fill_title">Zoom per riempire a schermo intero</string>
+    <string name="settings_zoom_fill_on">Ogni video riempie lo schermo; i bordi in eccesso vengono tagliati. Avvicina due dita per vedere un video intero.</string>
+    <string name="settings_zoom_fill_off">I video si vedono interi, con bande nere. Allarga due dita a schermo intero per riempire lo schermo.</string>
+    <string name="settings_zoom_fill_summary">zoom per riempire</string>
+    <string name="settings_seek_step_title">Indietro e avanti</string>
+    <string name="settings_seek_step_line">Di quanto saltano un doppio tocco sul video e i pulsanti −/⁠+</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Salti di %1$s s</string>
+    <string name="settings_music_normal_title">Musica a velocità normale</string>
+    <string name="settings_music_normal_line">I brani suonano sempre a 1×, anche con una velocità tenuta per tutti i video</string>
+    <string name="settings_chapters_open_title">Tieni aperti i capitoli</string>
+    <string name="settings_chapters_open_line">Scegliendo un capitolo l\'elenco resta aperto, per passare dall\'uno all\'altro</string>
+    <string name="settings_auto_pip_title">Picture in picture quando esci</string>
+    <string name="settings_auto_pip_line">Tornando alla schermata Home durante un video, continua in una piccola finestra</string>
 </resources>

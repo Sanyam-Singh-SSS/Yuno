@@ -5,6 +5,9 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +23,8 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.annotation.StringRes
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +41,20 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.DoNotDisturbOn
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +73,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.BasicTextField
@@ -79,6 +103,46 @@ import androidx.compose.ui.text.style.TextAlign
 import android.view.inputmethod.InputMethodManager
 import com.yuno.icons.SfIcons
 
+// ── Long-press options ─────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surfaceContainerLow,
+    ) {
+        Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Thumbnail(video.thumbnail, Modifier.width(112.dp).aspectRatio(16f / 9f), radius = 14)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(video.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(video.channel, color = c.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+            }
+        }
+        OptionRow(Icons.Rounded.PlaylistPlay, stringResource(R.string.ui_play_next)) { player.playNext(video); onDismiss() }
+        OptionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.ui_add_to_queue)) { player.addToQueue(video); onDismiss() }
+        if (Account.signedIn) {
+            OptionRow(Icons.Rounded.WatchLater, stringResource(R.string.ui_save_to_watch_later)) { player.saveToWatchLater(video); onDismiss() }
+            OptionRow(Icons.Rounded.LibraryAdd, stringResource(R.string.ui_save_to_playlist)) { onDismiss(); player.openPlaylists(video) }
+        }
+        OptionRow(Icons.Rounded.Share, stringResource(R.string.ui_share)) {
+            shareLink(context, "https://youtu.be/${video.id}", video.title)
+            onDismiss()
+        }
+        video.feedback?.notInterested?.let {
+            OptionRow(Icons.Rounded.DoNotDisturbOn, stringResource(R.string.ui_not_interested)) { player.notInterested(video); onDismiss() }
+        }
+        video.feedback?.dontRecommend?.let {
+            OptionRow(Icons.Rounded.RemoveCircleOutline, stringResource(R.string.ui_dont_recommend_channel)) { player.dontRecommendChannel(video); onDismiss() }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
 // ── Save to playlist (GitHub issue #12) ─────────────────────────────────────────
 
 /**
@@ -88,16 +152,26 @@ import com.yuno.icons.SfIcons
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem) {
+fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem, maxHeight: Dp) {
     val c = MaterialTheme.colorScheme
     ModalBottomSheet(
         onDismissRequest = player::closePlaylists,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.surfaceContainerLow,
+        // The video above stays as it is, as with the comments; a tap there still closes the sheet.
+        scrimColor = Color.Transparent,
     ) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        // Always exactly [maxHeight] tall (where the comments panel rests), handle and nav bar
+        // included, like the comments: a sheet sized to its content set off for the spinner's
+        // height and changed course when the playlists arrived (a hiccup mid-rise). Sized here,
+        // not on the sheet: a size on the sheet's own modifier also becomes the height it rests
+        // against, so it hung from the top.
+        val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val listHeight = (maxHeight - SheetHandleHeight - nav).coerceAtLeast(240.dp)
+        Box(Modifier.height(listHeight)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Text(
-                "Save to playlist",
+                stringResource(R.string.ui_save_to_playlist),
                 fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp,
                 modifier = Modifier.padding(horizontal = PageGutter),
             )
@@ -112,7 +186,7 @@ fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem) {
                 error != null -> Column(Modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(error, color = c.onSurfaceVariant, fontSize = 14.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    PillButton("Try again", { player.openPlaylists(video) })
+                    PillButton(stringResource(R.string.ui_try_again), { player.openPlaylists(video) })
                 }
                 choices == null -> PlaylistChoiceSkeletons()
                 else -> {
@@ -123,8 +197,44 @@ fun SaveToPlaylistSheet(player: PlayerState, video: VideoItem) {
                 }
             }
         }
+        // "Saved to …" lands over the list: the sheet is its own window, so the player's own
+        // note would sit hidden underneath it.
+        SheetMessage(player.actionMessage, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
+        }
     }
 }
+
+/** The player's confirmation pill inside a sheet: rises and fades in, sinks out (the player clears it). */
+@Composable
+private fun SheetMessage(message: String?, modifier: Modifier) {
+    val c = MaterialTheme.colorScheme
+    val reduced = rememberReducedMotion()
+    // Keeps the last text while it fades out.
+    val last = remember { arrayOfNulls<String>(1) }
+    if (message != null) last[0] = message
+    val t by animateFloatAsState(
+        if (message != null) 1f else 0f,
+        if (reduced) snap() else if (message != null) spring(dampingRatio = 0.7f, stiffness = 520f) else tween(180, easing = Motion.Exit),
+        label = "sheetMessage",
+    )
+    val text = last[0] ?: return
+    if (t == 0f && message == null) return
+    Box(
+        modifier
+            .graphicsLayer {
+                alpha = t.coerceIn(0f, 1f)
+                translationY = (1f - t) * 24.dp.toPx()
+                val sc = 0.9f + 0.1f * t
+                scaleX = sc; scaleY = sc
+            }
+            .clip(CircleShape)
+            .background(c.inverseSurface)
+            .padding(horizontal = 18.dp, vertical = 11.dp),
+    ) { Text(text, color = c.inverseOnSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+}
+
+/** Material's drag handle: 4 dp bar with 22 dp above and below. */
+private val SheetHandleHeight = 48.dp
 
 @Composable
 private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
@@ -138,12 +248,22 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f)) {
             Text(choice.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            privacyLabel(choice.privacy)?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            privacyLabel(choice.privacy)?.let { Text(stringResource(it), color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
         }
         Spacer(Modifier.width(12.dp))
-        // Filled check when the video is in it; an empty tonal circle when it isn't.
+        // Filled check when the video is in it; an empty tonal circle when it isn't. Picking
+        // fills it with a squish and the check pops in; unpicking shrinks the check away.
+        val reduced = rememberReducedMotion()
+        val fill by androidx.compose.animation.animateColorAsState(
+            if (on) c.primary else c.surfaceContainerHighest, if (reduced) snap() else tween(200), label = "choiceFill",
+        )
+        val check by animateFloatAsState(
+            if (on) 1f else 0f,
+            if (reduced) snap() else if (on) spring(dampingRatio = 0.45f, stiffness = 650f) else tween(140, easing = Motion.Exit),
+            label = "choiceCheck",
+        )
         Box(
-            Modifier.size(26.dp).clip(CircleShape).background(if (on) c.primary else c.surfaceContainerHighest),
+            Modifier.size(26.dp).squishOn(on).clip(CircleShape).background(fill),
             contentAlignment = Alignment.Center,
         ) {
             if (on) Icon(SfIcons.Check, "Saved", tint = c.onPrimary, modifier = Modifier.size(18.dp))
@@ -151,10 +271,11 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, onClick: () -> Unit) {
     }
 }
 
-private fun privacyLabel(privacy: String?) = when (privacy) {
-    "PRIVATE" -> "Private"
-    "UNLISTED" -> "Unlisted"
-    "PUBLIC" -> "Public"
+@StringRes
+private fun privacyLabel(privacy: String?): Int? = when (privacy) {
+    "PRIVATE" -> R.string.ui_privacy_private
+    "UNLISTED" -> R.string.ui_privacy_unlisted
+    "PUBLIC" -> R.string.ui_privacy_public
     else -> null
 }
 
@@ -188,7 +309,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
             Modifier.fillMaxWidth().height(56.dp).clip(CircleShape).background(c.surfaceContainerHigh).padding(horizontal = 20.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
-            if (title.isEmpty()) Text("Playlist name", color = c.onSurfaceVariant, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            if (title.isEmpty()) Text(stringResource(R.string.ui_playlist_name), color = c.onSurfaceVariant, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             BasicTextField(
                 value = title,
                 onValueChange = { title = it.take(150) },
@@ -216,7 +337,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
                             .clip(RoundedCornerShape(if (on) 18.dp else 10.dp))
                             .background(if (on) c.secondaryContainer else c.surfaceContainerHighest)
                             .padding(horizontal = 14.dp, vertical = 8.dp),
-                    ) { Text(privacyLabel(key)!!, color = if (on) c.onSecondaryContainer else c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    ) { Text(stringResource(privacyLabel(key)!!), color = if (on) c.onSecondaryContainer else c.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 }
             }
             Spacer(Modifier.width(8.dp))
@@ -228,7 +349,7 @@ private fun NewPlaylistRow(onCreate: (title: String, privacy: String) -> Unit) {
                     .background(c.primary)
                     .graphicsLayer { alpha = if (ready) 1f else 0.4f }
                     .padding(horizontal = 18.dp, vertical = 9.dp),
-            ) { Text("Create", color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+            ) { Text(stringResource(R.string.ui_create), color = c.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
         }
     }
 }
@@ -282,7 +403,7 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Queue · $count",
+                    plural(R.plurals.ui_queue_count, count.toLong(), count),
                     color = c.onSecondaryContainer, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
                 )
                 Text(next.title, color = c.onSecondaryContainer, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -299,7 +420,7 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
             ) {
                 Icon(SfIcons.ClearAll, null, tint = c.onSecondary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Clear", color = c.onSecondary, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                Text(stringResource(R.string.ui_clear), color = c.onSecondary, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             }
         }
     }
@@ -326,7 +447,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
         Row(Modifier.padding(horizontal = PageGutter).padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Queue", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, modifier = Modifier.weight(1f))
             Text(
-                "Clear", color = c.primary, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
+                stringResource(R.string.ui_clear), color = c.primary, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
                 modifier = Modifier
                     .graphicsLayer { alpha = clearAlpha }
                     .pressable(enabled = leavingRows == null && player.queue.isNotEmpty()) {
@@ -363,7 +484,7 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                     }
                 }
                 Text(
-                    "Nothing queued. Press and hold a video to add it.",
+                    stringResource(R.string.ui_queue_empty),
                     color = c.onSurfaceVariant, fontSize = 14.sp,
                     modifier = Modifier.graphicsLayer { alpha = emptied.value }.padding(horizontal = PageGutter, vertical = 24.dp),
                 )

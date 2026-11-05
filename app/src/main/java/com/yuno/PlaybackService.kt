@@ -102,8 +102,8 @@ class PlaybackService : MediaSessionService() {
             // Keeps CPU and Wi-Fi awake while playing, so background audio isn't cut off
             // when the phone sleeps.
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
+            .setSeekBackIncrementMs(SeekStep.ms)
+            .setSeekForwardIncrementMs(SeekStep.ms)
             .build()
         val openApp = PendingIntent.getActivity(
             this, 0,
@@ -138,15 +138,13 @@ class PlaybackService : MediaSessionService() {
         // task removed by System UI; the open window keeps playing. Its task is still listed, as
         // the removed one no longer is by now.
         val open = MainActivity.openTaskId()
-        if (open != null && getSystemService(ActivityManager::class.java).appTasks.any { it.taskInfo?.taskId == open }) {
+        if (open != null && getSystemService(ActivityManager::class.java).appTasks.any { it.taskInfo.taskId == open }) {
             Log.i("Yuno", "an older window's task was removed; still open in task $open, playing on")
             return
         }
         // Swiping the app away from Recents pauses and ends the session, playing or not
-        // (Derek, 2026-10-10; it used to keep playing), and drops the open video so the next
-        // launch doesn't put it back. onDestroy still saves the resume point.
+        // (Derek, 2026-10-10; it used to keep playing). onDestroy saves the resume point.
         Log.i("Yuno", "task removed: pausing and stopping")
-        SavedSession.discard()
         pauseAllPlayersAndStopSelf()
     }
 
@@ -203,8 +201,8 @@ object StreamRecovery {
     var recovering by mutableStateOf<String?>(null)
         internal set
 
-    /** Refetching failed: video ID and the reason, shown in the error panel. */
-    var failed by mutableStateOf<Pair<String, String>?>(null)
+    /** Refetching failed: video ID and why, shown in the error panel. */
+    var failed by mutableStateOf<Pair<String, Throwable>?>(null)
         internal set
 }
 
@@ -250,7 +248,7 @@ private class StreamRecoverer(
                     .onSuccess { resume(item, position) }
                     .onFailure {
                         Log.w("Yuno", "re-extracting $id failed", it)
-                        StreamRecovery.failed = id to YouTube.friendlyError(it)
+                        StreamRecovery.failed = id to it
                     }
             }
         }
@@ -459,7 +457,11 @@ private class SpeedKeeper(private val player: ExoPlayer) : Player.Listener {
         val id = mediaItem?.mediaId?.ifBlank { null } ?: return
         if (id == videoId) return
         videoId = id
-        player.setPlaybackSpeed(PlaybackSpeed.forNewVideo)
+        // Resolved before it was added (onAddMediaItems), so its details are in the cache by now.
+        val music = StreamCache.get(id)?.let(YouTube::isMusic) == true
+        val speed = PlaybackSpeed.forNewVideo(music)
+        player.setPlaybackSpeed(speed)
+        if (music) Log.i("Yuno", "speed for $id: ${speed}× (music)")
     }
 }
 

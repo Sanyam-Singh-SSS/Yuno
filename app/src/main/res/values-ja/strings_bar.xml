@@ -1,11 +1,9 @@
-﻿<resources>
+<resources>
     <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
     <!-- Accessibility labels of the bar's play button. -->
     <string name="bar_play">再生</string>
     <string name="bar_pause">一時停止</string>
     <!-- Accessibility labels of the bar's seek buttons. -->
-    <string name="bar_back_10">10 秒戻る</string>
-    <string name="bar_forward_10">10 秒進む</string>
     <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
     <string name="bar_more_controls">その他の操作</string>
     <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
@@ -54,7 +52,7 @@
     <string name="bar_transcript">文字起こし</string>
 
     <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
-    <string name="bar_pip_off">設定で Yuno のピクチャー イン ピクチャーがオフになっています。</string>
+<string name="bar_pip_off">設定で Yuno のピクチャー イン ピクチャーがオフになっています。</string>
 
     <!-- Pill above the scrub preview: let go here to not jump. Short. -->
     <string name="bar_cancel">キャンセル</string>

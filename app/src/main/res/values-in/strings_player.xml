@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <!-- ── Portrait player page (PlayerUi.kt) ── -->
 
     <!-- Tappable word after the video's stats line ("1.2M views · 3 days ago"), opens / closes the description. Keep short. -->
@@ -47,7 +47,8 @@
     <!-- Errors from loading a video or a page (YouTube.friendlyError), shown in the player and on pages. -->
     <string name="player_error_age_restricted">Video ini dibatasi usia dan memerlukan akun YouTube untuk ditonton.</string>
     <string name="player_error_geo">Video ini tidak tersedia di negara Anda.</string>
-    <string name="player_error_bot_check">YouTube meminta konfirmasi bahwa Anda bukan bot. Coba lagi dalam beberapa menit.</string>
+<string name="player_error_bot_check">YouTube meminta konfirmasi bahwa Anda bukan bot.</string>
+    <string name="player_error_bot_check_hint">Menyalakan lalu mematikan mode pesawat biasanya mengatasinya.</string>
     <string name="player_error_private">Video ini bersifat pribadi.</string>
     <string name="player_error_members_only">Video ini khusus anggota. Yuno belum dapat memutar video khusus anggota.</string>
     <string name="player_error_unavailable">Video ini tidak tersedia.</string>
@@ -83,4 +84,11 @@
     <string name="player_sb_action_ask">Tanya</string>
     <string name="player_sb_action_show">Tampil</string>
     <string name="player_sb_action_off">Mati</string>
+<!-- Wide windows: filters above the More videos column (the open video's channel, or the rest). -->
+    <string name="player_more_all">Semua</string>
+    <string name="player_more_from">Dari %1$s</string>
+    <string name="player_more_related">Terkait</string>
+    <string name="player_not_interested_done">Oke. Video seperti ini akan lebih jarang muncul</string>
+    <string name="player_channel_not_recommended">Channel ini tidak akan direkomendasikan lagi</string>
+    <string name="player_feedback_failed">Gagal mengirim ke YouTube. Coba lagi</string>
 </resources>

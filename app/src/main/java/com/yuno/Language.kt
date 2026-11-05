@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.app.Activity
 import android.app.Application
@@ -17,15 +17,15 @@ import java.util.Locale
 
 /**
  * The app's language: the phone's (default) or one picked in the account sheet. Android 13+ keeps the pick
- * itself (per-app language, also in Settings › Apps › Skipii › Language) and recreates the window; older
+ * itself (per-app language, also in Settings › Apps › Yuno › Language) and recreates the window; older
  * phones keep it in prefs "language" and every window is wrapped in it ([wrap]).
  *
  * YouTube is always asked in English (`hl=en`): the parsers, the movie / members-only filters and the
- * bot-check detection read its English words. Skipii shows everything in the app's language itself
+ * bot-check detection read its English words. Yuno shows everything in the app's language itself
  * ([formatCount], [displayAge], [plural]); the sign-in page follows the app's language ([webTag]).
  */
 object AppLanguage {
-    /** A language Skipii is translated into, named in its own language so it can be found from any other. */
+    /** A language Yuno is translated into, named in its own language so it can be found from any other. */
     class Choice(val tag: String, val name: String)
 
     val choices = listOf(
@@ -61,7 +61,7 @@ object AppLanguage {
         refresh()
     }
 
-    /** Re-reads the pick: on Android 13+ it can also change in Settings › Apps › Skipii › Language (the window is rebuilt). */
+    /** Re-reads the pick: on Android 13+ it can also change in Settings › Apps › Yuno › Language (the window is rebuilt). */
     fun refresh() {
         picked = if (Build.VERSION.SDK_INT >= 33) {
             app.getSystemService(LocaleManager::class.java)?.applicationLocales?.get(0)?.toLanguageTag().orEmpty()

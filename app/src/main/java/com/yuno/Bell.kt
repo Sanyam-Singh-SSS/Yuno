@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import android.Manifest
 import android.content.Context
@@ -55,14 +55,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
-/** A channel with the bell on. [since]: when Yuno learned it (no notifications for videos before). */
+/** A channel with the bell on. [since]: when Skipii learned it (no notifications for videos before). */
 data class BellChannel(val id: String, val name: String?, val avatar: String?, val since: Long = System.currentTimeMillis())
 
 /**
- * The bell: on = the account's "All" for that channel, and Yuno posts a notification for each of its new
- * videos (NewVideos). It's YouTube's own setting: read wherever a page shows the channel's Subscribe
- * button ([learn]) and from the whole subscriptions list once a day ([syncIfDue]); written with
- * notification/modify_channel_preference. Off writes "Personalized", YouTube's default.
+ * The bell (Derek, 2026-11-01; mockup A in docs/design/bell.html): on = the account's "All" for that
+ * channel, and Skipii posts a notification for each of its new videos (NewVideos). It's YouTube's own
+ * setting: read wherever a page shows the channel's Subscribe button ([learn]) and from the whole
+ * subscriptions list once a day ([syncIfDue]); written with notification/modify_channel_preference.
+ * Off writes "Personalized", YouTube's default, so the YouTube app goes back to how it was.
+ * [on] is the local copy the background check reads; it lives in prefs "bells".
  */
 object Bells {
     private const val TAG = "Yuno"
@@ -271,6 +273,7 @@ fun SubscribeWithBell(
             )
         }
         if (keyShown > 0f) {
+            // Grows out of Subscribed's right edge: the gap and key take their width as it shows.
             Spacer(Modifier.width(3.dp * keyShown))
             Box(
                 Modifier

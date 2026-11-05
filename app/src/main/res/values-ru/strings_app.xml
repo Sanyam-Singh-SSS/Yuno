@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Bottom tab bar labels (MainActivity Tab, drawn by NavBar). Tight: the selected tab shows its label
          beside the icon in a shared pill; keep as short as possible (~12 characters). -->
@@ -31,7 +31,7 @@
     <!-- Notification channel name (Android Settings › Notifications). -->
     <string name="app_update_channel">Обновления приложения</string>
     <!-- Notification after the app updated itself, %1$s is the version ("0.5.79"). -->
-    <string name="app_updated_title">Yuno обновлено до версии %1$s</string>
+<string name="app_updated_title">Yuno обновлено до версии %1$s</string>
     <string name="app_updated_text">Нажмите, чтобы открыть</string>
 
     <!-- The Subscribe button (player and channel page). Short: shares a row with the bell key. -->
@@ -48,7 +48,7 @@
     <string name="app_bell_off_message_unnamed">Уведомления от этого канала отключены</string>
     <string name="app_bell_failed">Не удалось изменить настройку колокольчика.</string>
     <!-- Notifications were refused when asked (Android 13+). -->
-    <string name="app_bell_allow_notifications">Разрешите Yuno отправлять уведомления, чтобы пользоваться колокольчиком.</string>
+<string name="app_bell_allow_notifications">Разрешите Yuno отправлять уведомления, чтобы пользоваться колокольчиком.</string>
     <!-- Notifications are off in Android's settings; the settings page opens next. -->
     <string name="app_bell_turn_on_notifications">Включите уведомления Yuno, чтобы пользоваться колокольчиком.</string>
 

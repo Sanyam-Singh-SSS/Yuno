@@ -13,22 +13,26 @@ class YunoApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // Before anything that could crash, so its stack trace is kept (Settings › About › Crash report).
+        CrashLog.install(this)
+        // First: everything below may already word something (str()).
         AppLanguage.init(this)
         NewPipe.init(NewPipeDownloader.instance)
         // The iOS client only adds HLS livestream formats; Yuno plays VOD, so skip that request.
         org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.setFetchIosClient(false)
         ThemeSettings.init(this)
-        LiquidGlassSetting.init(this)
-        Onboarding.init(this)
         QualityPreference.init(this)
         PlaybackSpeed.init(this)
         AudioOnly.init(this)
         PlayerControls.init(this)
+        FullscreenZoom.init(this)
+        SeekStep.init(this)
+        ChaptersStayOpen.init(this)
+        AutoPip.init(this)
         CaptionSettings.init(this)
         CaptionTranslator.refresh()
         SearchHistory.init(this)
         ResumeStore.init(this)
-        WatchHistory.init(this)
         SavedSession.init(this)
         Account.init(this)
         Bells.init(this)

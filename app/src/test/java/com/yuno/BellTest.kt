@@ -1,4 +1,4 @@
-﻿package com.yuno
+package com.yuno
 
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals

@@ -28,16 +28,64 @@ data class PlaylistRef(val id: String, val title: String, val thumbnail: String?
 data class PlaylistChoice(val id: String, val title: String, val contains: Boolean?, val privacy: String?)
 
 @Immutable
-data class ChannelRef(val id: String, val name: String, val avatar: String?) {
-    val url: String get() = "https://www.youtube.com/channel/$id"
+data class ChannelRef(val id: String, val name: String, val avatar: String?)
+
+/**
+ * One page of a feed plus the token for the next page, if any. [chips]: the category chips
+ * YouTube put over the feed (Home's first page only; empty everywhere else).
+ */
+@Immutable
+data class FeedPage(val videos: List<VideoItem>, val next: String?, val chips: List<FeedChip> = emptyList())
+
+/**
+ * One of Home's category chips ("All", "Music", "Gaming", "Recently uploaded"…), titled as
+ * YouTube sent it. [token] is the continuation that loads the chip's own feed; null for the
+ * chip that stands for the plain feed ("All", the one selected on the first page).
+ */
+@Immutable
+data class FeedChip(val title: String, val token: String?)
+
+/** A page of playlists (a channel's Playlists tab) and the token for the next one. */
+@Immutable
+data class PlaylistPage(val playlists: List<PlaylistRef>, val next: String?)
+
+/**
+ * The channel page's tabs Skipii shows (GitHub #53), by YouTube's English titles. Posts, Store,
+ * Playables, Live and the rest hold nothing Skipii plays.
+ */
+enum class ChannelTab(val title: String) { Home("Home"), Videos("Videos"), Shorts("Shorts"), Playlists("Playlists") }
+
+/** Where a channel shelf's "See all" goes: one of the channel's tabs, or a playlist page. */
+sealed interface ShelfLink {
+    data class Tab(val tab: ChannelTab) : ShelfLink
+    data class Playlist(val ref: PlaylistRef) : ShelfLink
 }
 
-/** One page of a feed plus the token for the next page, if any. */
+/**
+ * One row of a channel's Home tab, as the creator arranged it ("Videos", "Popular videos", a
+ * playlist's row, "Shorts", "Featured channels"). Usually one kind of item per shelf.
+ */
 @Immutable
-data class FeedPage(val videos: List<VideoItem>, val next: String?, val channelHeader: ChannelHeaderMeta? = null)
+data class ChannelShelf(
+    val title: String,
+    val videos: List<VideoItem> = emptyList(),
+    val shorts: List<VideoItem> = emptyList(),
+    val playlists: List<PlaylistRef> = emptyList(),
+    val channels: List<ChannelRef> = emptyList(),
+    val link: ShelfLink? = null,
+)
 
+/**
+ * A channel page's Home tab: which tabs the channel has (each with its browse params), the
+ * featured video and the shelves. [subscribed] only signed in (null otherwise or not shown).
+ */
 @Immutable
-data class ChannelHeaderMeta(val handle: String?, val subscribers: Long, val videoCount: Long, val verified: Boolean = false)
+data class ChannelHome(
+    val tabs: Map<ChannelTab, String>,
+    val featured: VideoItem?,
+    val shelves: List<ChannelShelf>,
+    val subscribed: Boolean? = null,
+)
 
 enum class LikeStatus { Like, Dislike, None }
 
@@ -48,6 +96,18 @@ data class VideoAccountState(val like: LikeStatus, val subscribed: Boolean?, val
 data class SubscribedChannel(val ref: ChannelRef, val bell: Boolean?)
 
 class NotSignedInException : IOException("Not signed in")
+
+/**
+ * YouTube answered a signed-in request with an error status. [message] stays English (it's logged, and
+ * Feeds shows messages that start with "YouTube"); [getLocalizedMessage] is the same in the app's language.
+ */
+class YouTubeRefusedException(val code: Int) : IOException(
+    if (code == 401 || code == 403) "YouTube rejected the session ($code). Try signing in again." else "YouTube returned $code",
+) {
+    override fun getLocalizedMessage(): String =
+        if (code == 401 || code == 403) str(R.string.app_error_session_rejected, code.toString())
+        else str(R.string.app_error_youtube_returned, code.toString())
+}
 
 /**
  * The signed-in Google session (user chose full sync, 2026-10-04).
@@ -94,16 +154,18 @@ object Account {
         refreshClientConfig()
         val menu = InnerTube.post("account/account_menu", JSONObject())
         var found: Profile? = null
+        // A fallback name is stored with the session, so it stays in the language of the sign-in.
+        val fallbackName = str(R.string.app_account_fallback_name)
         menu.walk { key, obj ->
             if (key == "activeAccountHeaderRenderer" && found == null) {
                 found = Profile(
-                    name = obj.text("accountName") ?: "YouTube account",
+                    name = obj.text("accountName") ?: fallbackName,
                     handle = obj.text("channelHandle"),
                     avatar = obj.optJSONObject("accountPhoto")?.thumbnails()?.lastOrNull(),
                 )
             }
         }
-        val p = found ?: Profile("YouTube account", null, null)
+        val p = found ?: Profile(fallbackName, null, null)
         store?.apply {
             put(KEY_NAME, p.name); put(KEY_HANDLE, p.handle); put(KEY_AVATAR, p.avatar)
         }
@@ -114,6 +176,7 @@ object Account {
         synchronized(cookies) { cookies.clear() }
         store?.clear()
         profile = null
+        // The bells are the account's; signed out there are none (and no new-video notifications).
         Bells.clear()
         android.webkit.CookieManager.getInstance().apply { removeAllCookies(null); flush() }
     }
@@ -123,7 +186,7 @@ object Account {
         runCatching {
             val request = Request.Builder().url("https://www.youtube.com/?hl=en")
                 .header("User-Agent", Net.USER_AGENT)
-                .apply { val cookie = cookieHeader(); if (cookie.isNotEmpty()) header("Cookie", cookie) }
+                .header("Cookie", cookieHeader())
                 .build()
             Net.client.newCall(request).execute().use { r ->
                 absorbSetCookies(r.headers("Set-Cookie"))
@@ -134,15 +197,6 @@ object Account {
             store?.put(KEY_CLIENT_VERSION, clientVersion)
             store?.put(KEY_VISITOR, visitorData)
         }
-    }
-
-    /**
-     * Guest Home needs a stable visitor id so YouTube can keep recommending. Fetches one from
-     * youtube.com when signed out and none is stored yet (signed-in sign-in already does this).
-     */
-    fun ensureVisitor() {
-        if (visitorData != null) return
-        refreshClientConfig()
     }
 
     internal fun clientVersion() = clientVersion
@@ -211,20 +265,12 @@ object Account {
 object InnerTube {
     private const val BASE = "https://www.youtube.com/youtubei/v1/"
     private val JSON_TYPE = "application/json".toMediaType()
-    /** InnerTube ANDROID client version (notification writes sometimes require this client). */
-    private const val ANDROID_CLIENT_VERSION = "19.47.39"
 
     /** Signed in when there's a session, otherwise anonymous (public pages like channels). */
     internal fun postAny(endpoint: String, body: JSONObject): JSONObject =
         if (Account.signedIn) post(endpoint, body) else post(endpoint, body, anonymous = true)
 
-    internal fun post(
-        endpoint: String,
-        body: JSONObject,
-        anonymous: Boolean = false,
-        referer: String = Account.ORIGIN + "/",
-        clientOriginalUrl: String? = null,
-    ): JSONObject {
+    internal fun post(endpoint: String, body: JSONObject, anonymous: Boolean = false): JSONObject {
         val auth = if (anonymous) null else Account.authorization() ?: throw NotSignedInException()
         body.put(
             "context",
@@ -235,10 +281,7 @@ object InnerTube {
                     .put("clientVersion", Account.clientVersion())
                     .put("hl", "en")
                     .put("gl", "US")
-                    .apply {
-                        Account.visitorData()?.let { put("visitorData", it) }
-                        clientOriginalUrl?.let { put("originalUrl", it) }
-                    },
+                    .apply { Account.visitorData()?.let { put("visitorData", it) } },
             ),
         )
         val request = Request.Builder()
@@ -248,7 +291,7 @@ object InnerTube {
             .apply { if (auth != null) { header("Cookie", Account.cookieHeader()); header("Authorization", auth) } }
             .header("Origin", Account.ORIGIN)
             .header("X-Origin", Account.ORIGIN)
-            .header("Referer", referer)
+            .header("Referer", Account.ORIGIN + "/")
             .header("X-Goog-AuthUser", "0")
             .header("X-Youtube-Client-Name", "1")
             .header("X-Youtube-Client-Version", Account.clientVersion())
@@ -257,14 +300,7 @@ object InnerTube {
         Net.client.newCall(request).execute().use { r ->
             if (auth != null) Account.absorbSetCookies(r.headers("Set-Cookie"))
             val text = r.body?.string().orEmpty()
-            if (r.code == 401 || r.code == 403) throw IOException("YouTube rejected the session (${r.code}). Try signing in again.")
-            if (!r.isSuccessful) {
-                val detail = runCatching {
-                    JSONObject(text).optJSONObject("error")?.optJSONArray("message")?.optJSONObject(0)
-                        ?.optString("simpleText")?.ifBlank { null }
-                }.getOrNull() ?: text.take(160).ifBlank { null }
-                throw IOException(if (detail != null) "YouTube returned ${r.code}: $detail" else "YouTube returned ${r.code}")
-            }
+            if (!r.isSuccessful) throw YouTubeRefusedException(r.code)
             return JSONObject(text)
         }
     }
@@ -276,59 +312,80 @@ object InnerTube {
         parseFeed(post("browse", body))
     }
 
-    /** Signed-in personalized Home. */
-    suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
-
     /**
-     * Guest Home. Anonymous `FEwhat_to_watch` is an empty "history is off" wall, and Trending
-     * is consent-blocked the same way — anonymous search still returns real videos.
+     * Home. [next] is either the feed's own next page or a category chip's token: a chip loads
+     * as a continuation of FEwhat_to_watch (its answer replaces the feed's body, and its own
+     * "load more" pages on from there). The first page also carries the chips.
      */
-    suspend fun guestHome(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
-        if (!Account.signedIn) Account.ensureVisitor()
-        val body = if (next != null) JSONObject().put("continuation", next)
-        else JSONObject().put("query", GUEST_HOME_QUERY)
-        val page = parseFeed(postAny("search", body))
-        if (page.videos.isNotEmpty() || next != null) return@withContext page
-        // NewPipe search as a last resort (same path as the Search tab).
-        val videos = YouTube.search(GUEST_HOME_QUERY)
-        if (videos.isEmpty()) throw IOException("Couldn't load recommendations.")
-        FeedPage(videos, null)
+    suspend fun home(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (next != null) JSONObject().put("continuation", next) else JSONObject().put("browseId", "FEwhat_to_watch")
+        val root = post("browse", body)
+        val page = parseFeed(root)
+        if (next == null) page.copy(chips = parseHomeChips(root)) else page
     }
 
-    /** Broad query so guest Home looks like a normal feed of popular videos. */
-    private const val GUEST_HOME_QUERY = "popular videos"
-
+    /**
+     * A channel's uploads (Videos tab), members-only ones filtered out like everywhere else. The
+     * first page carries the tab's sort as chips (Latest · Popular · Oldest); a chip's token is a
+     * continuation that reloads the list in that order, read like any next page.
+     */
     suspend fun channelVideos(channelId: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
         val body = if (continuation != null) JSONObject().put("continuation", continuation)
         else JSONObject().put("browseId", channelId).put("params", CHANNEL_VIDEOS_TAB)
         val root = postAny("browse", body)
         val page = parseFeed(root)
-        val header = if (continuation == null) parseChannelHeader(root) else null
-        FeedPage(page.videos, page.next, header)
+        if (continuation == null) page.copy(chips = parseHomeChips(root)) else page
     }
 
     /** The channel page's Videos tab selector (as on youtube.com, 2026-10-06). */
     private const val CHANNEL_VIDEOS_TAB = "EgZ2aWRlb3PyBgQKAjoA"
-    suspend fun subscriptionsFeed(next: String? = null) = browse("FEsubscriptions", next)
-    suspend fun history(next: String? = null) = browse("FEhistory", next)
-    suspend fun playlist(id: String, next: String? = null) = browse("VL$id", next)
 
-    /** Header avatar from a channel browse (playlist rows often ship no channel thumbnail). */
-    suspend fun channelAvatarUrl(channelId: String): String? = withContext(Dispatchers.IO) {
+    /**
+     * A channel page's Home tab (the page itself, no params), anonymous when signed out: the
+     * tabs it has, the featured video and the creator's shelves. Signed in, the subscribe
+     * button's state comes along and its bell goes to [Bells].
+     */
+    suspend fun channelHome(channelId: String, name: String?, avatar: String?): ChannelHome = withContext(Dispatchers.IO) {
         val root = postAny("browse", JSONObject().put("browseId", channelId))
-        parseChannelAvatar(root.optJSONObject("header"))
+        val home = parseChannelHome(root, channelId)
+        if (!Account.signedIn) return@withContext home
+        var subscribed: Boolean? = null
+        var bell: Boolean? = null
+        root.walk { key, obj ->
+            if ((key == "subscribeButtonRenderer" || key == "subscriptionStateEntity") && obj.has("subscribed") && subscribed == null) {
+                subscribed = obj.optBoolean("subscribed")
+            }
+            if (key == "subscriptionNotificationToggleButtonRenderer" && bell == null) bell = parseBell(obj)
+        }
+        Bells.learn(channelId, subscribed, bell, name, avatar)
+        home.copy(subscribed = subscribed)
     }
 
-    internal fun parseChannelAvatar(header: JSONObject?): String? {
-        if (header == null) return null
-        var url: String? = null
-        header.walk { key, obj ->
-            if (url != null) return@walk
-            if (key == "avatarViewModel" || key == "decoratedAvatarViewModel") {
-                obj.optJSONObject("image")?.optJSONArray("sources")?.widestSourceUrl()?.let { url = it }
-            }
-        }
-        return url?.let { normalizeChannelAvatarUrl(absoluteUrl(it)) }
+    /** A channel's Shorts tab, a page at a time ([params]: the tab's, from [ChannelHome.tabs]). */
+    suspend fun channelShorts(channelId: String, params: String, continuation: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (continuation != null) JSONObject().put("continuation", continuation)
+        else JSONObject().put("browseId", channelId).put("params", params)
+        parseChannelShorts(postAny("browse", body))
+    }
+
+    /** A channel's Playlists tab, a page at a time. */
+    suspend fun channelPlaylists(channelId: String, params: String, continuation: String? = null): PlaylistPage = withContext(Dispatchers.IO) {
+        val body = if (continuation != null) JSONObject().put("continuation", continuation)
+        else JSONObject().put("browseId", channelId).put("params", params)
+        val root = postAny("browse", body)
+        PlaylistPage(parsePlaylists(root), parseFeed(root).next)
+    }
+
+    suspend fun subscriptionsFeed(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (next != null) JSONObject().put("continuation", next) else JSONObject().put("browseId", "FEsubscriptions")
+        parseSubscriptionsFeed(post("browse", body))
+    }
+    suspend fun history(next: String? = null) = browse("FEhistory", next)
+
+    /** A playlist's videos; anonymous when signed out, so a channel's public playlists open too. */
+    suspend fun playlist(id: String, next: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (next != null) JSONObject().put("continuation", next) else JSONObject().put("browseId", "VL$id")
+        parseFeed(postAny("browse", body))
     }
 
     suspend fun channels(): List<ChannelRef> = withContext(Dispatchers.IO) {
@@ -345,30 +402,31 @@ object InnerTube {
     }
 
     suspend fun playlists(): List<PlaylistRef> = withContext(Dispatchers.IO) {
+        parsePlaylists(post("browse", JSONObject().put("browseId", "FEplaylist_aggregation"))).filterNot { it.id == "WL" || it.id == "LL" }
+    }
+
+    /** Every playlist a response lists (old grid/list renderers or lockups), in order. */
+    internal fun parsePlaylists(root: JSONObject): List<PlaylistRef> {
         val out = LinkedHashMap<String, PlaylistRef>()
-        post("browse", JSONObject().put("browseId", "FEplaylist_aggregation")).walk { key, obj ->
-            when (key) {
-                "gridPlaylistRenderer", "playlistRenderer" -> {
-                    val id = obj.optString("playlistId").ifBlank { return@walk }
-                    out.getOrPut(id) {
-                        PlaylistRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl), obj.text("videoCountText") ?: obj.text("videoCountShortText"))
-                    }
-                }
-                "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_PLAYLIST") {
-                    val id = obj.optString("contentId").ifBlank { return@walk }
-                    val meta = obj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
-                    out.getOrPut(id) {
-                        PlaylistRef(
-                            id = id,
-                            title = meta?.optJSONObject("title")?.optString("content").orEmpty(),
-                            thumbnail = obj.firstImageSource(),
-                            subtitle = obj.collectStrings("text").firstOrNull { it.contains("video", ignoreCase = true) },
-                        )
-                    }
-                }
-            }
+        root.walk { key, obj -> playlistOf(key, obj)?.let { out.putIfAbsent(it.id, it) } }
+        return out.values.toList()
+    }
+
+    private fun playlistOf(key: String, obj: JSONObject): PlaylistRef? = when (key) {
+        "gridPlaylistRenderer", "playlistRenderer" -> obj.optString("playlistId").ifBlank { null }?.let { id ->
+            PlaylistRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl), obj.text("videoCountText") ?: obj.text("videoCountShortText"))
         }
-        out.values.filterNot { it.id == "WL" || it.id == "LL" }
+        "lockupViewModel" -> if (obj.optString("contentType") != "LOCKUP_CONTENT_TYPE_PLAYLIST") null
+        else obj.optString("contentId").ifBlank { null }?.let { id ->
+            val meta = obj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+            PlaylistRef(
+                id = id,
+                title = meta?.optJSONObject("title")?.optString("content").orEmpty(),
+                thumbnail = obj.firstImageSource(),
+                subtitle = obj.collectStrings("text").firstOrNull { it.contains("video", ignoreCase = true) },
+            )
+        }
+        else -> null
     }
 
     /**
@@ -376,15 +434,10 @@ object InnerTube {
      * it reports is kept in [Bells] (every page that shows it keeps the local copy current).
      */
     suspend fun videoState(videoId: String): VideoAccountState = withContext(Dispatchers.IO) {
-        val next = post(
-            "next",
-            JSONObject().put("videoId", videoId).put("contentCheckOk", true).put("racyCheckOk", true),
-        )
+        val next = post("next", JSONObject().put("videoId", videoId))
         val state = parseVideoState(next)
         val owner = next.findObject("videoOwnerRenderer")
-        state.channelId?.let {
-            Bells.learn(it, state.subscribed, state.bell, owner?.text("title"), owner?.thumbnails()?.lastOrNull()?.let(::absoluteUrl))
-        }
+        state.channelId?.let { Bells.learn(it, state.subscribed, state.bell, owner?.text("title"), owner?.thumbnails()?.lastOrNull()?.let(::absoluteUrl)) }
         state
     }
 
@@ -411,21 +464,6 @@ object InnerTube {
             }
         }
         return VideoAccountState(like, subscribed, channelId, bell)
-    }
-
-    /** Whether the account follows [channelId] (from the channel page's subscribe button); its bell goes to [Bells]. */
-    suspend fun channelSubscribed(channelId: String, name: String? = null, avatar: String? = null): Boolean? = withContext(Dispatchers.IO) {
-        var subscribed: Boolean? = null
-        var bell: Boolean? = null
-        val page = post("browse", JSONObject().put("browseId", channelId))
-        page.walk { key, obj ->
-            if ((key == "subscribeButtonRenderer" || key == "subscriptionStateEntity") && obj.has("subscribed") && subscribed == null) {
-                subscribed = obj.optBoolean("subscribed")
-            }
-            if (key == "subscriptionNotificationToggleButtonRenderer" && bell == null) bell = parseBell(obj)
-        }
-        Bells.learn(channelId, subscribed, bell, name, avatar)
-        subscribed
     }
 
     /**
@@ -480,8 +518,8 @@ object InnerTube {
                 "channelRenderer", "gridChannelRenderer" -> {
                     val id = obj.optString("channelId").ifBlank { return@walk }
                     out.putIfAbsent(id, SubscribedChannel(
-                        ref = ChannelRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl)),
-                        bell = obj.findObject("subscriptionNotificationToggleButtonRenderer")?.let(::parseBell),
+                        ChannelRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl)),
+                        obj.findObject("subscriptionNotificationToggleButtonRenderer")?.let(::parseBell),
                     ))
                 }
                 "continuationItemRenderer", "continuationItemViewModel" -> obj.collectStrings("token").firstOrNull()?.let { next = it }
@@ -602,7 +640,6 @@ object InnerTube {
         return java.net.URLEncoder.encode(java.util.Base64.getEncoder().encodeToString(bytes), "UTF-8")
     }
 
-
     suspend fun setInWatchLater(videoId: String, add: Boolean) = setInPlaylist("WL", videoId, add)
 
     suspend fun setInPlaylist(playlistId: String, videoId: String, add: Boolean) = withContext(Dispatchers.IO) {
@@ -703,11 +740,12 @@ object InnerTube {
         var next: String? = null
         root.walk { key, obj ->
             when (key) {
-                // Members-only videos can't be played (anonymous extraction), and full movies/TV
-                // aren't wanted (Derek), so neither is ever shown.
+                // Members-only videos can't be played (anonymous extraction), live and upcoming
+                // streams neither (no live playback, as in search), and full movies/TV aren't
+                // wanted (Derek), so none of them is ever shown.
                 "videoRenderer", "gridVideoRenderer", "compactVideoRenderer", "playlistVideoRenderer" ->
-                    if (!isMembersOnly(obj) && !isMovie(obj)) parseVideoRenderer(obj)?.let { videos.putIfAbsent(it.id, it) }
-                "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_VIDEO" && !isMembersOnly(obj) && !isMovie(obj)) {
+                    if (!isMembersOnly(obj) && !isLive(obj) && !isMovie(obj)) parseVideoRenderer(obj)?.let { videos.putIfAbsent(it.id, it) }
+                "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_VIDEO" && !isMembersOnly(obj) && !isLive(obj) && !isMovie(obj)) {
                     parseLockup(obj)?.let { videos.putIfAbsent(it.id, it) }
                 }
                 // Only the feed's own "load more" item (old and new names); chip filters
@@ -717,6 +755,202 @@ object InnerTube {
             }
         }
         return FeedPage(videos.values.toList(), next)
+    }
+
+    /**
+     * Subscriptions in upload order, newest first (Derek; GitHub #50). YouTube's web feed opens with a
+     * "Most relevant" shelf of its own picks (out of date order) before the uploads; that shelf is left
+     * out. Each page is then kept newest first by its ages ("3 hours ago"; stable, so videos of the same
+     * age keep YouTube's order, and one without an age keeps its place after the one before it).
+     */
+    internal fun parseSubscriptionsFeed(root: JSONObject): FeedPage {
+        root.walk { key, shelf ->
+            if (key != "richShelfRenderer" && key != "shelfRenderer") return@walk
+            val title = shelf.text("title") ?: shelf.optJSONObject("header")?.collectStrings("content")?.firstOrNull()
+            // Emptied in place: walk() goes into it next and finds nothing.
+            if (title?.trim().equals(MOST_RELEVANT, ignoreCase = true)) shelf.keys().asSequence().toList().forEach(shelf::remove)
+        }
+        val page = parseFeed(root)
+        var last = 0L
+        val ages = page.videos.associate { v -> v.id to (NewVideos.ageMs(v.uploaded) ?: last).also { last = it } }
+        return page.copy(videos = page.videos.sortedBy { ages[it.id] })
+    }
+
+    private const val MOST_RELEVANT = "Most relevant"
+
+    /**
+     * Home's category chips: `feedFilterChipBarRenderer` (the grid's header) → `chipCloudChipRenderer`
+     * {text, isSelected, navigationEndpoint.continuationCommand.token}, as captured 2026-11-02;
+     * the view-model form (`chipBarViewModel` → `chipViewModel` {text, selected,
+     * tapCommand.innertubeCommand.continuationCommand.token}) is read too in case Home moves to it.
+     * The selected chip is the feed already shown ("All"), so its token is null. Chips that load
+     * nothing by continuation (a drop-down, a link elsewhere) are left out, and so are
+     * [SKIPPED_CHIPS]. YouTube is always asked in English, so the titles are stable keys.
+     */
+    internal fun parseHomeChips(root: JSONObject): List<FeedChip> {
+        val out = mutableListOf<FeedChip>()
+        fun add(title: String?, selected: Boolean, token: String?) {
+            val name = title?.trim()?.ifBlank { null } ?: return
+            if (SKIPPED_CHIPS.any { it.equals(name, ignoreCase = true) }) return
+            if (out.any { it.title == name }) return
+            when {
+                selected -> out += FeedChip(name, null)
+                token != null -> out += FeedChip(name, token)
+            }
+        }
+        fun tokenOf(command: JSONObject?) = command?.optJSONObject("continuationCommand")?.optString("token")?.ifBlank { null }
+        val bar = root.findObject("feedFilterChipBarRenderer")
+        if (bar != null) {
+            bar.walk { key, chip ->
+                if (key == "chipCloudChipRenderer") add(chip.text("text"), chip.optBoolean("isSelected"), tokenOf(chip.optJSONObject("navigationEndpoint")))
+            }
+            return out
+        }
+        val grid = root.findObject("richGridRenderer")?.optJSONObject("header")?.optJSONObject("chipBarViewModel") ?: return out
+        grid.walk { key, chip ->
+            if (key != "chipViewModel" || chip.optString("displayType").endsWith("DROP_DOWN")) return@walk
+            add(chip.optString("text"), chip.optBoolean("selected"), tokenOf(chip.optJSONObject("tapCommand")?.optJSONObject("innertubeCommand")))
+        }
+        return out
+    }
+
+    /**
+     * Home chips Skipii can't fill: "Your custom feed" is a prompt box with no videos (Derek,
+     * 6632.png), and "Live" is all live streams, which aren't played (6633.png).
+     */
+    private val SKIPPED_CHIPS = listOf("Your custom feed", "Live")
+
+    /**
+     * A channel page (its Home tab selected): `twoColumnBrowseResultsRenderer.tabs[].tabRenderer`
+     * {title, endpoint.browseEndpoint.params} for each tab, and the Home tab's sections:
+     * `channelVideoPlayerRenderer` (the featured video), `shelfRenderer` (title, items in
+     * `content`, "See all" in `endpoint`) and `reelShelfRenderer` (Shorts). Captured anonymously
+     * 2026-11-04. Shelves with nothing playable (Posts) are left out.
+     */
+    internal fun parseChannelHome(root: JSONObject, channelId: String): ChannelHome {
+        val tabs = LinkedHashMap<ChannelTab, String>()
+        var homeContent: JSONObject? = null
+        val list = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")?.optJSONArray("tabs")
+        for (i in 0 until (list?.length() ?: 0)) {
+            val tab = list?.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
+            val kind = ChannelTab.entries.firstOrNull { it.title.equals(tab.optString("title"), ignoreCase = true) } ?: continue
+            val params = tab.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")?.optString("params")?.ifBlank { null } ?: continue
+            tabs.putIfAbsent(kind, params)
+            if (kind == ChannelTab.Home) homeContent = tab.optJSONObject("content")
+        }
+        var featured: VideoItem? = null
+        val shelves = mutableListOf<ChannelShelf>()
+        homeContent?.walk { key, obj ->
+            when (key) {
+                "channelVideoPlayerRenderer" -> if (featured == null) featured = parseFeatured(obj)
+                "shelfRenderer", "reelShelfRenderer" -> parseShelf(obj, key == "reelShelfRenderer", channelId, tabs.keys)?.let(shelves::add)
+            }
+        }
+        return ChannelHome(tabs, featured, shelves)
+    }
+
+    private fun parseFeatured(o: JSONObject): VideoItem? {
+        val id = o.optString("videoId").takeIf { it.length == 11 } ?: return null
+        return VideoItem(
+            id = id,
+            title = o.text("title") ?: return null,
+            channel = "", channelUrl = null,
+            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            avatar = null, durationSec = 0,
+            views = parseViews(o.text("viewCountText")),
+            uploaded = o.text("publishedTimeText"),
+        )
+    }
+
+    private fun parseShelf(o: JSONObject, reel: Boolean, channelId: String, tabs: Set<ChannelTab>): ChannelShelf? {
+        val title = o.text("title")?.trim()?.ifBlank { null } ?: return null
+        val videos = LinkedHashMap<String, VideoItem>()
+        val shorts = LinkedHashMap<String, VideoItem>()
+        val playlists = LinkedHashMap<String, PlaylistRef>()
+        val channels = LinkedHashMap<String, ChannelRef>()
+        (o.optJSONObject("content") ?: o).walk { key, obj ->
+            when (key) {
+                "videoRenderer", "gridVideoRenderer" ->
+                    if (!isMembersOnly(obj) && !isLive(obj) && !isMovie(obj)) parseVideoRenderer(obj)?.let { videos.putIfAbsent(it.id, it) }
+                "lockupViewModel" -> when (obj.optString("contentType")) {
+                    "LOCKUP_CONTENT_TYPE_VIDEO" -> if (!isMembersOnly(obj) && !isLive(obj) && !isMovie(obj)) parseLockup(obj)?.let { videos.putIfAbsent(it.id, it) }
+                    else -> playlistOf(key, obj)?.let { playlists.putIfAbsent(it.id, it) }
+                }
+                "shortsLockupViewModel", "reelItemRenderer" -> parseShortLockup(obj)?.let { shorts.putIfAbsent(it.id, it) }
+                "gridPlaylistRenderer", "playlistRenderer" -> playlistOf(key, obj)?.let { playlists.putIfAbsent(it.id, it) }
+                "gridChannelRenderer", "channelRenderer" -> obj.optString("channelId").takeIf { it.startsWith("UC") }?.let { id ->
+                    channels.putIfAbsent(id, ChannelRef(id, obj.text("title") ?: "", obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl)))
+                }
+            }
+        }
+        if (videos.isEmpty() && shorts.isEmpty() && playlists.isEmpty() && channels.isEmpty()) return null
+        val browse = o.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")
+        val target = browse?.optString("browseId").orEmpty()
+        val link = when {
+            target.startsWith("VL") -> ShelfLink.Playlist(PlaylistRef(target.removePrefix("VL"), title, videos.values.firstOrNull()?.thumbnail, null))
+            target == channelId -> tabOfParams(browse?.optString("params"))?.takeIf { it in tabs }?.let { ShelfLink.Tab(it) }
+            reel && ChannelTab.Shorts in tabs -> ShelfLink.Tab(ChannelTab.Shorts)
+            else -> null
+        }
+        return ChannelShelf(title, videos.values.toList(), shorts.values.toList(), playlists.values.toList(), channels.values.toList(), link)
+    }
+
+    /**
+     * Which tab a channel browse's params open: they're a protobuf whose field 2 is the tab's
+     * name ("videos", "shorts", "playlists"…), base64 (sometimes URL-safe, sometimes %-escaped).
+     */
+    internal fun tabOfParams(params: String?): ChannelTab? {
+        val raw = params?.let { java.net.URLDecoder.decode(it, "UTF-8") }?.ifBlank { null } ?: return null
+        val bytes = runCatching { java.util.Base64.getDecoder().decode(raw.replace('-', '+').replace('_', '/').trimEnd('=').let { it + "=".repeat((4 - it.length % 4) % 4) }) }
+            .getOrNull() ?: return null
+        if (bytes.size < 2 || bytes[0] != 0x12.toByte() || bytes[1] + 2 > bytes.size) return null
+        return when (String(bytes, 2, bytes[1].toInt())) {
+            "videos" -> ChannelTab.Videos
+            "shorts" -> ChannelTab.Shorts
+            "playlists" -> ChannelTab.Playlists
+            "featured" -> ChannelTab.Home
+            else -> null
+        }
+    }
+
+    /** A channel's Shorts tab page: its `shortsLockupViewModel`s and the next page's token. */
+    internal fun parseChannelShorts(root: JSONObject): FeedPage {
+        val shorts = LinkedHashMap<String, VideoItem>()
+        root.walk { key, obj -> if (key == "shortsLockupViewModel" || key == "reelItemRenderer") parseShortLockup(obj)?.let { shorts.putIfAbsent(it.id, it) } }
+        return FeedPage(shorts.values.toList(), parseFeed(root).next)
+    }
+
+    /**
+     * A short's tile: `shortsLockupViewModel` {onTap…reelWatchEndpoint.videoId, overlayMetadata
+     * {primaryText = title, secondaryText = "739K views"}, thumbnailViewModel (9:16)}; or the older
+     * `reelItemRenderer` {videoId, headline, viewCountText, thumbnail}.
+     */
+    private fun parseShortLockup(o: JSONObject): VideoItem? {
+        val reel = o.optJSONObject("onTap")?.optJSONObject("innertubeCommand")?.optJSONObject("reelWatchEndpoint")
+        val id = (reel?.optString("videoId") ?: o.optString("videoId")).takeIf { it.length == 11 } ?: return null
+        val meta = o.optJSONObject("overlayMetadata")
+        val title = meta?.optJSONObject("primaryText")?.optString("content")?.ifBlank { null } ?: o.text("headline") ?: return null
+        val views = meta?.optJSONObject("secondaryText")?.optString("content")?.ifBlank { null } ?: o.text("viewCountText")
+        val frame = (o.optJSONObject("thumbnailViewModel") ?: o.optJSONObject("thumbnail"))?.collectStrings("url")?.firstOrNull()
+        return VideoItem(
+            id = id, title = title, channel = "", channelUrl = null,
+            thumbnail = frame?.let(::absoluteUrl) ?: "https://i.ytimg.com/vi/$id/oar2.jpg",
+            avatar = null, durationSec = 0, views = parseViews(views), uploaded = null,
+        )
+    }
+
+    /**
+     * A live or upcoming stream (Skipii plays neither, as search already drops them). Lockups: a
+     * LIVE badge on the THUMBNAIL ("LIVE" / "Now playing"); an avatar's `liveData` only means the
+     * channel is live now and its other videos play fine. Older renderers: BADGE_STYLE_TYPE_LIVE_NOW,
+     * the time overlay styled LIVE / UPCOMING, or `upcomingEventData` (the markers NewPipe reads).
+     */
+    internal fun isLive(o: JSONObject): Boolean {
+        if (o.has("upcomingEventData")) return true
+        if (o.collectStrings("style").any { it == "BADGE_STYLE_TYPE_LIVE_NOW" || it == "LIVE" || it == "UPCOMING" }) return true
+        val image = o.optJSONObject("contentImage") ?: return false
+        return image.collectStrings("badgeStyle").any { it == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE" } ||
+            image.collectStrings("text").any { it.equals("UPCOMING", ignoreCase = true) }
     }
 
     /** YouTube's "Members only" badge: BADGE_MEMBERS_ONLY (lockups) / BADGE_STYLE_TYPE_MEMBERS_ONLY (older renderers). */
@@ -760,17 +994,20 @@ object InnerTube {
         val infoRuns = o.optJSONObject("videoInfo")?.optJSONArray("runs")?.let { runs ->
             (0 until runs.length()).map { runs.optJSONObject(it).optString("text") }.filter { it.isNotBlank() && it.trim() != "•" }
         }.orEmpty()
-        val avatar = pickChannelAvatarUrl(o)
+        val avatar = o.optJSONObject("channelThumbnailSupportedRenderers")
+            ?.optJSONObject("channelThumbnailWithLinkRenderer")?.thumbnails()?.lastOrNull()
+            ?: o.optJSONObject("channelThumbnail")?.thumbnails()?.lastOrNull()
         return VideoItem(
             id = id,
             title = o.text("title") ?: return null,
             channel = channelRun?.optString("text").orEmpty(),
             channelUrl = channelId?.takeIf { it.startsWith("UC") }?.let { "https://www.youtube.com/channel/$it" },
-            thumbnail = videoThumbnailUrl(o, id),
-            avatar = avatar?.let { sharpenChannelAvatarUrl(absoluteUrl(it), 96) },
+            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            avatar = avatar?.let(::absoluteUrl),
             durationSec = parseDuration(duration),
             views = parseViews(o.text("viewCountText") ?: o.text("shortViewCountText") ?: infoRuns.firstOrNull { it.contains("view") }),
             uploaded = o.text("publishedTimeText") ?: infoRuns.firstOrNull { it.contains("ago") },
+            feedback = feedbackOf(o),
         )
     }
 
@@ -786,76 +1023,71 @@ object InnerTube {
                 for (p in 0 until ps.length()) ps.optJSONObject(p)?.optJSONObject("text")?.optString("content")?.ifBlank { null }?.let(parts::add)
             }
         }
-        val avatar = meta.bestChannelAvatarUrl()
+        val avatar = meta.optJSONObject("image")?.collectStrings("url")?.firstOrNull()
         val duration = o.optJSONObject("contentImage")?.collectStrings("text")?.firstOrNull { DURATION.matches(it) }
         return VideoItem(
             id = id,
             title = title,
             channel = parts.firstOrNull { !it.contains("view") && !it.contains("ago") }.orEmpty(),
             channelUrl = o.collectStrings("browseId").firstOrNull { it.startsWith("UC") }?.let { "https://www.youtube.com/channel/$it" },
-            thumbnail = videoThumbnailUrl(o, id),
-            avatar = avatar?.let { sharpenChannelAvatarUrl(absoluteUrl(it), 96) },
+            thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+            avatar = avatar?.let(::absoluteUrl),
             durationSec = parseDuration(duration),
             views = parseViews(parts.firstOrNull { it.contains("view") }),
             uploaded = parts.firstOrNull { it.contains("ago") },
+            feedback = feedbackOf(o),
         )
     }
 
-    private fun pickChannelAvatarUrl(o: JSONObject): String? {
-        o.optJSONObject("channelThumbnailSupportedRenderers")
-            ?.optJSONObject("channelThumbnailWithLinkRenderer")?.let { r ->
-                r.thumbnails()?.lastOrNull()?.let { return it }
-                r.optJSONObject("thumbnail")?.thumbnails()?.lastOrNull()?.let { return it }
+    /**
+     * A card's "Not interested" and "Don't recommend channel" (#16): items of its ⋮ menu that carry a
+     * feedbackEndpoint — a lockup's sheet (listItemViewModel) or an older renderer's menuServiceItemRenderer.
+     * Known by YouTube's icon (NOT_INTERESTED / REMOVE), else by the English label (hl=en). Signed out, the
+     * menu holds only Add to queue and Share, so cards have none.
+     */
+    internal fun feedbackOf(o: JSONObject): CardFeedback? {
+        var notInterested: String? = null
+        var dontRecommend: String? = null
+        o.walk { key, item ->
+            val label: String?
+            val icon: String?
+            val endpoint: JSONObject?
+            when (key) {
+                "listItemViewModel" -> {
+                    label = item.optJSONObject("title")?.optString("content")
+                    icon = item.optJSONObject("leadingImage")?.collectStrings("imageName")?.firstOrNull()
+                    endpoint = item.optJSONObject("rendererContext")?.optJSONObject("commandContext")?.optJSONObject("onTap")
+                        ?.optJSONObject("innertubeCommand")?.optJSONObject("feedbackEndpoint")
+                }
+                "menuServiceItemRenderer" -> {
+                    label = item.text("text")
+                    icon = item.optJSONObject("icon")?.optString("iconType")
+                    endpoint = item.optJSONObject("serviceEndpoint")?.optJSONObject("feedbackEndpoint")
+                }
+                else -> return@walk
             }
-        o.optJSONObject("channelThumbnail")?.thumbnails()?.lastOrNull()?.let { return it }
-        o.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")?.bestChannelAvatarUrl()?.let { return it }
-        o.bestChannelAvatarUrl()?.let { return it }
-        var found: String? = null
-        o.forEachObject { obj ->
-            if (found != null) return@forEachObject
-            obj.optJSONArray("sources")?.widestSourceUrl()?.takeIf { isChannelAvatarUrl(it) }?.let { found = it }
+            val token = endpoint?.optString("feedbackToken")?.ifBlank { null } ?: return@walk
+            val words = label.orEmpty().replace('\u2019', '\'')
+            when {
+                icon == "NOT_INTERESTED" || words.equals("Not interested", ignoreCase = true) -> if (notInterested == null) notInterested = token
+                icon == "REMOVE" || words.startsWith("Don't recommend", ignoreCase = true) -> if (dontRecommend == null) dontRecommend = token
+            }
         }
-        return found
+        return if (notInterested == null && dontRecommend == null) null else CardFeedback(notInterested, dontRecommend)
     }
 
-    private fun isChannelAvatarUrl(url: String): Boolean = when {
-        "ytimg.com/vi/" in url -> false
-        "/ytc/" in url -> true
-        "googleusercontent.com" in url && "-c-k-c0x00ffffff-no-rj" in url -> true
-        "ggpht.com" in url && "=s" in url && "=w" !in url -> true
-        else -> false
+    /** Sends a card's feedback token (Not interested / Don't recommend channel) to the account. */
+    suspend fun sendFeedback(token: String) = withContext(Dispatchers.IO) {
+        val answer = post(
+            "feedback",
+            JSONObject()
+                .put("feedbackTokens", JSONArray().put(token))
+                .put("isFeedbackTokenUnencrypted", false)
+                .put("shouldMerge", false),
+        )
+        val processed = answer.optJSONArray("feedbackResponses")?.optJSONObject(0)?.optBoolean("isProcessed", true) ?: true
+        check(processed) { "feedback not processed" }
     }
-
-    private fun JSONObject.bestChannelAvatarUrl(): String? =
-        optJSONObject("image")
-            ?.optJSONObject("decoratedAvatarViewModel")
-            ?.optJSONObject("avatar")
-            ?.optJSONObject("avatarViewModel")
-            ?.optJSONObject("image")
-            ?.optJSONArray("sources")
-            ?.widestSourceUrl()
-            ?: optJSONObject("image")?.collectStrings("url")
-                ?.filter { "ggpht.com" in it || "googleusercontent.com" in it }
-                ?.maxByOrNull { channelAvatarEdgePx(it) }
-
-    internal fun pickBestThumbnailUrl(renderer: JSONObject): String? {
-        renderer.bestThumbnailUrl()?.let { return it }
-        renderer.optJSONObject("contentImage")?.bestThumbnailUrl()?.let { return it }
-        renderer.optJSONObject("contentImage")
-            ?.optJSONObject("thumbnailViewModel")
-            ?.optJSONObject("image")
-            ?.optJSONArray("sources")
-            ?.let { pickWidestSourceUrl(it) }
-            ?.let { return it }
-        return renderer.optJSONObject("contentImage")?.collectStrings("url")
-            ?.filter { "ytimg.com/vi/" in it || "googleusercontent.com" in it || "ggpht.com" in it }
-            ?.maxWithOrNull(compareBy({ ytimgThumbnailWidth(it) }, { it.length }))
-    }
-
-    private fun pickWidestSourceUrl(arr: JSONArray): String? = arr.widestSourceUrl()
-
-    private fun videoThumbnailUrl(renderer: JSONObject, videoId: String): String =
-        sharpenFeedThumbnail(pickBestThumbnailUrl(renderer)?.let(::absoluteUrl), videoId)
 
     private val DURATION = Regex("^\\d{1,2}(:\\d{2}){1,2}$")
 
@@ -876,84 +1108,9 @@ object InnerTube {
     }
 
     private fun absoluteUrl(url: String) = if (url.startsWith("//")) "https:$url" else url
-
-    internal fun parseChannelHeader(root: JSONObject): ChannelHeaderMeta? {
-        var handle: String? = null
-        var subsText: String? = null
-        var videosText: String? = null
-        fun noteLine(line: String?) {
-            val t = line?.trim()?.ifBlank { null } ?: return
-            val lower = t.lowercase()
-            if (subsText == null && "subscriber" in lower) subsText = t
-            if (videosText == null) {
-                VIDEO_COUNT_IN_LINE.find(lower)?.value?.let { videosText = it }
-            }
-        }
-        fun scanMetadataParts(arr: JSONArray?) {
-            if (arr == null) return
-            for (i in 0 until arr.length()) {
-                noteLine(arr.optJSONObject(i)?.optJSONObject("text")?.optString("content"))
-            }
-        }
-        root.walk { _, obj ->
-            noteLine(obj.text("subscriberCountText"))
-            noteLine(obj.text("videoCountText"))
-            noteLine(obj.optJSONObject("text")?.optString("content"))
-            scanMetadataParts(obj.optJSONArray("metadataParts"))
-            obj.optJSONArray("metadataRows")?.let { rows ->
-                for (r in 0 until rows.length()) {
-                    scanMetadataParts(rows.optJSONObject(r)?.optJSONArray("metadataParts"))
-                }
-            }
-            obj.optString("vanityChannelUrl").takeIf { "@" in it }?.let { url ->
-                handle = handle ?: url.substringAfter("@").substringBefore("?").substringBefore("/").ifBlank { null }
-            }
-            obj.optString("canonicalBaseUrl").takeIf { it.startsWith("/@") }?.let { path ->
-                handle = handle ?: path.removePrefix("/@").substringBefore("/").ifBlank { null }
-            }
-        }
-        if (subsText == null || videosText == null) {
-            for (line in root.collectStrings("content") + root.collectStrings("simpleText")) {
-                noteLine(line)
-            }
-        }
-        val subscribers = parseViews(subsText)
-        val videoCount = parseViews(videosText)
-        val verified = root.optJSONObject("header")?.let { parseChannelVerified(it) } ?: false
-        if (handle == null && subscribers < 0 && videoCount < 0 && !verified) return null
-        return ChannelHeaderMeta(handle, subscribers.coerceAtLeast(0), videoCount.coerceAtLeast(-1), verified)
-    }
-
-    /** Verified / official-artist badge on the channel header (not on videos in the list). */
-    internal fun parseChannelVerified(headerRoot: JSONObject): Boolean {
-        headerRoot.optJSONObject("pageHeaderRenderer")?.optJSONObject("content")
-            ?.optJSONObject("pageHeaderViewModel")?.optJSONObject("title")
-            ?.optJSONObject("dynamicTextViewModel")?.optJSONObject("rendererContext")
-            ?.optJSONObject("accessibilityContext")?.optString("label")?.let { label ->
-                if (VERIFIED_CHANNEL_LABEL.containsMatchIn(label)) return true
-            }
-        var found = false
-        headerRoot.walk { key, obj ->
-            if (found) return@walk
-            if (key == "metadataBadgeRenderer" && isVerifiedChannelBadge(obj.optString("style"))) found = true
-        }
-        return found
-    }
-
-    private fun isVerifiedChannelBadge(style: String): Boolean =
-        style == "BADGE_STYLE_TYPE_VERIFIED" || style == "BADGE_STYLE_TYPE_VERIFIED_ARTIST"
-
-    private val VERIFIED_CHANNEL_LABEL = Regex("verified|official artist", RegexOption.IGNORE_CASE)
-    private val VIDEO_COUNT_IN_LINE = Regex("""[\d,.]+[kmb]?\s+videos\b""", RegexOption.IGNORE_CASE)
 }
 
 // ── JSON helpers ───────────────────────────────────────────────────────────────
-
-internal fun JSONObject.findObject(key: String): JSONObject? {
-    var found: JSONObject? = null
-    walk { k, o -> if (found == null && k == key) found = o }
-    return found
-}
 
 /** Depth-first visit of every object-valued key in the tree. */
 internal fun JSONObject.walk(visit: (key: String, obj: JSONObject) -> Unit) {
@@ -997,6 +1154,13 @@ private fun JSONArray.forEachObjectInArray(visit: (JSONObject) -> Unit) {
     }
 }
 
+/** The first object stored under [key] anywhere below this one (depth first, as [walk] visits). */
+internal fun JSONObject.findObject(key: String): JSONObject? {
+    var found: JSONObject? = null
+    walk { k, o -> if (found == null && k == key) found = o }
+    return found
+}
+
 /** YouTube text: {"simpleText": "..."} or {"runs": [{"text": "..."}]}. */
 internal fun JSONObject.text(key: String): String? {
     val o = optJSONObject(key) ?: return optString(key).ifBlank { null }
@@ -1010,38 +1174,6 @@ internal fun JSONObject.text(key: String): String? {
 internal fun JSONObject.thumbnails(): List<String>? {
     val arr = optJSONObject("thumbnail")?.optJSONArray("thumbnails") ?: optJSONArray("thumbnails") ?: return null
     return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("url")?.ifBlank { null } }
-}
-
-internal fun JSONArray.widestSourceUrl(): String? {
-    var best: String? = null
-    var bestW = -1
-    for (i in 0 until length()) {
-        val entry = optJSONObject(i) ?: continue
-        val url = entry.optString("url").ifBlank { continue }
-        val w = entry.optInt("width", channelAvatarEdgePx(url).takeIf { it > 0 } ?: ytimgThumbnailWidth(url))
-        if (w > bestW) {
-            bestW = w
-            best = url
-        }
-    }
-    return best ?: optJSONObject(length() - 1)?.optString("url")?.ifBlank { null }
-}
-
-/** Widest thumbnail entry on a renderer (typically 1280×720 on video cards). */
-internal fun JSONObject.bestThumbnailUrl(): String? {
-    val arr = optJSONObject("thumbnail")?.optJSONArray("thumbnails") ?: optJSONArray("thumbnails") ?: return null
-    var best: String? = null
-    var bestW = -1
-    for (i in 0 until arr.length()) {
-        val entry = arr.optJSONObject(i) ?: continue
-        val url = entry.optString("url").ifBlank { continue }
-        val w = entry.optInt("width", 0)
-        if (w > bestW) {
-            bestW = w
-            best = url
-        }
-    }
-    return best ?: arr.optJSONObject(arr.length() - 1)?.optString("url")?.ifBlank { null }
 }
 
 private fun JSONObject.firstImageSource(): String? = collectStrings("url").firstOrNull { it.contains("ytimg") || it.contains("ggpht") }

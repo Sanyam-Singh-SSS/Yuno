@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Shorts tab: shown instead of the feed when YouTube sent no Shorts at all. -->
     <string name="shorts_none_offered">Hiện YouTube không đề xuất video Shorts nào.</string>

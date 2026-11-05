@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Video player overlay (portrait "on the video" controls and fullscreen), quality/speed pickers, errors. -->
 
@@ -16,15 +16,13 @@
     <string name="video_next">Далее</string>
     <string name="video_fullscreen">Во весь экран</string>
     <string name="video_exit_fullscreen">Выйти из полноэкранного режима</string>
-    <string name="video_back_10">Назад на 10 секунд</string>
-    <string name="video_forward_10">Вперёд на 10 секунд</string>
     <string name="video_play">Воспроизвести</string>
     <string name="video_pause">Пауза</string>
     <!-- Accessibility label of the check mark on the chosen row of a picker. -->
     <string name="video_selected">Выбрано</string>
 
     <!-- Message shown when picture-in-picture can't start because the user turned it off in Android's settings. -->
-    <string name="video_pip_off">Режим «Картинка в картинке» отключён для Yuno в настройках.</string>
+<string name="video_pip_off">Режим «Картинка в картинке» отключён для Yuno в настройках.</string>
 
     <!-- Quality: automatic. Also the start of the quality pill on the video ("Auto · 720p"): small pill, keep short. -->
     <string name="video_quality_auto">Авто</string>
@@ -71,4 +69,5 @@
 
     <!-- Button on the playback error panel. -->
     <string name="video_try_again">Повторить попытку</string>
+<string name="video_open_in_youtube">Открыть в YouTube</string>
 </resources>

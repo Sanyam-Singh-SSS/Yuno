@@ -1,11 +1,9 @@
-﻿<resources>
+<resources>
     <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
     <!-- Accessibility labels of the bar's play button. -->
     <string name="bar_play">Putar</string>
     <string name="bar_pause">Jeda</string>
     <!-- Accessibility labels of the bar's seek buttons. -->
-    <string name="bar_back_10">Mundur 10 detik</string>
-    <string name="bar_forward_10">Maju 10 detik</string>
     <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
     <string name="bar_more_controls">Kontrol lainnya</string>
     <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
@@ -54,7 +52,7 @@
     <string name="bar_transcript">Transkrip</string>
 
     <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
-    <string name="bar_pip_off">Picture-in-picture dinonaktifkan untuk Yuno di Setelan.</string>
+<string name="bar_pip_off">Picture-in-picture dinonaktifkan untuk Yuno di Setelan.</string>
 
     <!-- Pill above the scrub preview: let go here to not jump. Short. -->
     <string name="bar_cancel">Batal</string>

@@ -1,12 +1,10 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The open player's bar (the tab bar turns into it): play, -10 / +10, audio only, the ⋮ key. -->
     <!-- Accessibility labels of the bar's play button. -->
     <string name="bar_play">Phát</string>
     <string name="bar_pause">Tạm dừng</string>
     <!-- Accessibility labels of the bar's seek buttons. -->
-    <string name="bar_back_10">Lùi 10 giây</string>
-    <string name="bar_forward_10">Tua đi 10 giây</string>
     <!-- Accessibility label of the ⋮ key that opens the card of tools. -->
     <string name="bar_more_controls">Thêm nút điều khiển</string>
     <!-- Accessibility label of the ✕ the ⋮ key turns into. -->
@@ -55,7 +53,7 @@
     <string name="bar_transcript">Bản chép lời</string>
 
     <!-- Message when the phone's settings don't allow picture-in-picture for the app. -->
-    <string name="bar_pip_off">Chế độ hình trong hình đang tắt cho Yuno trong Cài đặt.</string>
+<string name="bar_pip_off">Chế độ hình trong hình đang tắt cho Yuno trong Cài đặt.</string>
 
     <!-- Pill above the scrub preview: let go here to not jump. Short. -->
     <string name="bar_cancel">Hủy</string>

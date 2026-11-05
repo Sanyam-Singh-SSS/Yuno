@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <!-- Video player overlay (portrait "on the video" controls and fullscreen), quality/speed pickers, errors. -->
 
     <!-- Small note under the loading spinner while YouTube runs a bot check on this connection. -->
@@ -15,15 +15,13 @@
     <string name="video_next">Berikutnya</string>
     <string name="video_fullscreen">Layar penuh</string>
     <string name="video_exit_fullscreen">Keluar dari layar penuh</string>
-    <string name="video_back_10">Mundur 10 detik</string>
-    <string name="video_forward_10">Maju 10 detik</string>
     <string name="video_play">Putar</string>
     <string name="video_pause">Jeda</string>
     <!-- Accessibility label of the check mark on the chosen row of a picker. -->
     <string name="video_selected">Dipilih</string>
 
     <!-- Message shown when picture-in-picture can't start because the user turned it off in Android's settings. -->
-    <string name="video_pip_off">Picture-in-picture dinonaktifkan untuk Yuno di Setelan.</string>
+<string name="video_pip_off">Picture-in-picture dinonaktifkan untuk Yuno di Setelan.</string>
 
     <!-- Quality: automatic. Also the start of the quality pill on the video ("Auto · 720p"): small pill, keep short. -->
     <string name="video_quality_auto">Otomatis</string>
@@ -70,4 +68,5 @@
 
     <!-- Button on the playback error panel. -->
     <string name="video_try_again">Coba lagi</string>
+<string name="video_open_in_youtube">Buka di YouTube</string>
 </resources>

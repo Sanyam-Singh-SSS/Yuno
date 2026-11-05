@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- The Settings page (Settings.kt). -->
 <resources>
     <string name="settings_title">Settings</string>
@@ -37,7 +37,7 @@
         <item quantity="other">%1$s channels with the bell on</item>
     </plurals>
     <string name="settings_bells_none">No bells on yet</string>
-    <string name="settings_bells_empty">Ring the bell on a channel\'s Subscribe button and Yuno tells you about each of its new videos.</string>
+<string name="settings_bells_empty">Ring the bell on a channel\'s Subscribe button and Yuno tells you about each of its new videos.</string>
     <string name="settings_bell_line">Every new video</string>
     <string name="settings_system_notifications">Android notification settings</string>
     <string name="settings_system_notifications_line">Sound, vibration, Do Not Disturb</string>
@@ -51,9 +51,29 @@
     <string name="settings_update_available">Version %1$s is available</string>
     <string name="settings_source">Source code on GitHub</string>
     <string name="settings_source_line">Report a problem or ask for a feature</string>
+<!-- Settings › About: the crash report (GitHub #55), shared to paste into an issue. -->
+    <string name="settings_crash_title">Crash report</string>
+    <string name="settings_crash_saved">Saved from the last crash. Share it and paste it into a GitHub issue</string>
+    <string name="settings_crash_none">No crash saved. Shares how Android last closed Yuno, for a GitHub issue</string>
+    <string name="settings_crash_tile">Crash report saved</string>
+    <string name="settings_crash_share">Share crash report</string>
     <!-- The developer card, last on the Settings page; %1$s = the handle (@y7esdii). -->
     <string name="settings_made_by">Made by %1$s</string>
     <string name="settings_say_hi">Come say hi</string>
     <string name="settings_email_developer">Email the developer</string>
     <string name="settings_no_app">No app on this phone can open that</string>
+<string name="settings_zoom_fill_title">Zoom to fill in fullscreen</string>
+    <string name="settings_zoom_fill_on">Every video fills the screen; the edges past it are cropped. Pinch in to see a video whole.</string>
+    <string name="settings_zoom_fill_off">Videos show whole, with black bars. Pinch out on one in fullscreen to fill the screen.</string>
+    <string name="settings_zoom_fill_summary">zoomed to fill</string>
+    <string name="settings_seek_step_title">Skip back and forward</string>
+    <string name="settings_seek_step_line">How far a double tap on the video and the −/⁠+ buttons jump</string>
+    <string name="settings_seconds_short">%1$s s</string>
+    <string name="settings_seek_step_summary">Skips %1$s s</string>
+    <string name="settings_music_normal_title">Music at normal speed</string>
+    <string name="settings_music_normal_line">Songs always play at 1×, even with a speed kept for every video</string>
+    <string name="settings_chapters_open_title">Keep chapters open</string>
+    <string name="settings_chapters_open_line">Picking a chapter leaves the list open, so you can go from one to the next</string>
+    <string name="settings_auto_pip_title">Picture-in-picture when you leave</string>
+    <string name="settings_auto_pip_line">Going home while a video plays keeps it playing in a small window</string>
 </resources>

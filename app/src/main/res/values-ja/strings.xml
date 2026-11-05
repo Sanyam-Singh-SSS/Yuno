@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <!-- Compact counts (formatCount): %1$s is the number, already with the language's decimal mark ("1,2"). -->
     <!-- Unused in Japanese (count_in_ten_thousands is true): kept as in English. -->
     <string name="count_thousands">%1$sK</string>

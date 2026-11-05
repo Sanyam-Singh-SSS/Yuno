@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -50,6 +51,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -86,6 +90,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -167,6 +172,12 @@ private const val SourceUrl = "https://github.com/danielkanan/Yuno"
 /**
  * The whole page. [active] is false while it slides away (its Back stops catching). Back goes up one
  * level: a category → the front page, a search → cleared, the front page → closed.
+ *
+ * [wide] (a window 600 dp or wider; large screens, "Rail 3" in docs/design/large-screens-rail.html): list-detail.
+ * The front page stays on the left with the open category's tile lit; the category is a panel on the right
+ * with its own title and scroll. Both are always in view, so Back only clears a search, then closes. All
+ * state lives above the switch, so a window that narrows (rotation, a fold) carries on as the phone page on
+ * the same category, and going wide again keeps it.
  */
 @Composable
 fun SettingsScreen(
@@ -175,6 +186,7 @@ fun SettingsScreen(
     onClose: () -> Unit,
     onSignIn: () -> Unit,
     onSignedOut: () -> Unit,
+    wide: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
     val reduced = rememberReducedMotion()
@@ -275,6 +287,9 @@ private fun FoldingPage(
     onBack: () -> Unit,
     titleModifier: Modifier = Modifier,
     onSearch: (suspend () -> Unit)? = null,
+    findSeq: Int = 0,
+    /** The wide page's category panel: already clear of the status bar, no back arrow, the panel's tone. */
+    inPanel: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
@@ -658,7 +673,7 @@ private const val ThreadsUrl = "https://www.threads.com/@y7esdii"
 private const val XUrl = "https://x.com/y7esdii"
 private const val DeveloperEmail = "decioarruda7c@gmail.com"
 /** A filterable keyword in the subject, keyed to this app. */
-private const val EmailSubject = "Skipii feedback"
+private const val EmailSubject = "Yuno feedback"
 
 @Composable
 private fun DeveloperCard(player: PlayerState, modifier: Modifier = Modifier) {
@@ -770,6 +785,7 @@ private fun summaryOf(page: SettingsPage): String = when (page) {
     SettingsPage.About -> listOfNotNull(
         stringResource(R.string.settings_version, BuildConfig.VERSION_NAME),
         AppUpdate.available?.let { stringResource(R.string.settings_update_available, it.version) },
+        if (CrashLog.unshared) stringResource(R.string.settings_crash_tile) else null,
     ).joinDots()
     SettingsPage.Account -> Account.profile?.let { p -> listOfNotNull(p.name, p.handle).joinDots() } ?: stringResource(R.string.ui_account_pitch_title)
 }
@@ -834,6 +850,7 @@ private fun entries(): List<Entry> = buildList {
     add(Entry(SettingsPage.Account, "account", str(if (Account.signedIn) R.string.ui_sign_out else R.string.ui_sign_in), listOfNotNull(Account.profile?.name, "Google")))
     val ab = SettingsPage.About
     add(Entry(ab, "version", str(R.string.settings_version, BuildConfig.VERSION_NAME), listOf(str(R.string.settings_checking))))
+    add(Entry(ab, "crash", str(R.string.settings_crash_title), listOf(str(R.string.settings_crash_none), str(R.string.settings_crash_saved))))
     add(Entry(ab, "source", str(R.string.settings_source), listOf(str(R.string.settings_source_line), "GitHub")))
 }
 
@@ -908,6 +925,8 @@ private class Find(val key: String?) {
 
     suspend fun reach() {
         val key = key ?: return
+        // The same row picked again (wide: its category stays open) lights up again.
+        lit = null
         // Once the category has slid in.
         delay(380)
         val row = rows[key]?.takeIf { it.isAttached } ?: return
@@ -1085,6 +1104,20 @@ private fun PlaybackPage(player: PlayerState) {
                 PlaybackSpeed.remember,
                 icon = Icons.Rounded.Speed,
             ) { if (it != PlaybackSpeed.remember) player.toggleRememberSpeed() }
+            1 -> SwitchSetting(
+                "music", shape,
+                stringResource(R.string.settings_music_normal_title),
+                stringResource(R.string.settings_music_normal_line),
+                PlaybackSpeed.musicAtNormal,
+                icon = Icons.Rounded.MusicNote,
+            ) { PlaybackSpeed.chooseMusicAtNormal(it) }
+            2 -> SwitchSetting(
+                "zoom", shape,
+                stringResource(R.string.settings_zoom_fill_title),
+                stringResource(if (FullscreenZoom.fill) R.string.settings_zoom_fill_on else R.string.settings_zoom_fill_off),
+                FullscreenZoom.fill,
+                icon = Icons.Rounded.ZoomOutMap,
+            ) { player.setZoomFillSetting(it) }
             else -> SwitchSetting(
                 "audio", shape,
                 stringResource(R.string.bar_audio_only),
@@ -1351,6 +1384,19 @@ private fun AboutPage(player: PlayerState) {
         if (i == 0) {
             LinkSetting("version", shape, Icons.Rounded.SystemUpdateAlt, stringResource(R.string.settings_version, BuildConfig.VERSION_NAME), updateStatus()) {
                 if (AppUpdate.available != null) whatsNew = true else AppUpdate.checkNow()
+            }
+        } else if (i == 1) {
+            // GitHub #55: what crashed (or how Android closed Skipii), to paste into an issue.
+            val line = stringResource(if (CrashLog.newest > 0L) R.string.settings_crash_saved else R.string.settings_crash_none)
+            LinkSetting("crash", shape, Icons.Rounded.BugReport, stringResource(R.string.settings_crash_title), line) {
+                scope.launch {
+                    val text = withContext(Dispatchers.IO) { CrashLog.report(context) }
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_SUBJECT, "Yuno crash report")
+                        .putExtra(Intent.EXTRA_TEXT, text)
+                    context.openOrSay(Intent.createChooser(send, shareTitle)) { player.actionMessage = it }
+                    CrashLog.markShared()
+                }
             }
         } else {
             LinkSetting("source", shape, Icons.Rounded.Code, stringResource(R.string.settings_source), stringResource(R.string.settings_source_line)) {

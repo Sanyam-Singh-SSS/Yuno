@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <!-- Bottom tab bar labels (MainActivity Tab, drawn by NavBar). Tight: the selected tab shows its label
          beside the icon in a shared pill; keep as short as possible (~12 characters). -->
     <string name="app_tab_home">Inicio</string>
@@ -30,7 +30,7 @@
     <!-- Notification channel name (Android Settings › Notifications). -->
     <string name="app_update_channel">Actualizaciones de la app</string>
     <!-- Notification after the app updated itself, %1$s is the version ("0.5.79"). -->
-    <string name="app_updated_title">Yuno se actualizó a la versión %1$s</string>
+<string name="app_updated_title">Yuno se actualizó a la versión %1$s</string>
     <string name="app_updated_text">Toca para abrir</string>
 
     <!-- The Subscribe button (player and channel page). Short: shares a row with the bell key. -->
@@ -47,7 +47,7 @@
     <string name="app_bell_off_message_unnamed">Notificaciones desactivadas para este canal</string>
     <string name="app_bell_failed">No se pudo cambiar la campana.</string>
     <!-- Notifications were refused when asked (Android 13+). -->
-    <string name="app_bell_allow_notifications">Permite las notificaciones de Yuno para usar la campana.</string>
+<string name="app_bell_allow_notifications">Permite las notificaciones de Yuno para usar la campana.</string>
     <!-- Notifications are off in Android's settings; the settings page opens next. -->
     <string name="app_bell_turn_on_notifications">Activa las notificaciones de Yuno para usar la campana.</string>
 

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_title">Setelan</string>
     <string name="settings_search">Telusuri setelan</string>
@@ -25,7 +25,7 @@
         <item quantity="other">%1$s channel dengan lonceng aktif</item>
     </plurals>
     <string name="settings_bells_none">Belum ada lonceng yang aktif</string>
-    <string name="settings_bells_empty">Aktifkan lonceng di tombol Subscribe sebuah channel, dan Yuno akan memberi tahu setiap video barunya.</string>
+<string name="settings_bells_empty">Aktifkan lonceng di tombol Subscribe sebuah channel, dan Yuno akan memberi tahu setiap video barunya.</string>
     <string name="settings_bell_line">Setiap video baru</string>
     <string name="settings_system_notifications">Setelan notifikasi Android</string>
     <string name="settings_system_notifications_line">Suara, getar, Jangan Ganggu</string>
@@ -37,8 +37,27 @@
     <string name="settings_update_available">Versi %1$s tersedia</string>
     <string name="settings_source">Kode sumber di GitHub</string>
     <string name="settings_source_line">Laporkan masalah atau minta fitur</string>
+<string name="settings_crash_title">Laporan error</string>
+    <string name="settings_crash_saved">Disimpan dari error terakhir. Bagikan lalu tempel di issue GitHub</string>
+    <string name="settings_crash_none">Tidak ada error tersimpan. Membagikan cara Android terakhir menutup Yuno, untuk issue GitHub</string>
+    <string name="settings_crash_tile">Laporan error tersimpan</string>
+    <string name="settings_crash_share">Bagikan laporan error</string>
     <string name="settings_made_by">Dibuat oleh %1$s</string>
     <string name="settings_say_hi">Mampir dan sapa</string>
     <string name="settings_email_developer">Kirim email ke developer</string>
     <string name="settings_no_app">Tidak ada aplikasi di ponsel ini yang bisa membukanya</string>
+<string name="settings_zoom_fill_title">Perbesar untuk mengisi di layar penuh</string>
+    <string name="settings_zoom_fill_on">Setiap video mengisi layar; tepi yang berlebih dipotong. Cubit ke dalam untuk melihat video secara utuh.</string>
+    <string name="settings_zoom_fill_off">Video tampil utuh, dengan bilah hitam. Cubit ke luar di layar penuh untuk mengisi layar.</string>
+    <string name="settings_zoom_fill_summary">diperbesar untuk mengisi</string>
+    <string name="settings_seek_step_title">Mundur dan maju</string>
+    <string name="settings_seek_step_line">Seberapa jauh ketuk dua kali pada video dan tombol −/⁠+ melompat</string>
+    <string name="settings_seconds_short">%1$s dtk</string>
+    <string name="settings_seek_step_summary">Lompat %1$s dtk</string>
+    <string name="settings_music_normal_title">Musik dengan kecepatan normal</string>
+    <string name="settings_music_normal_line">Lagu selalu diputar 1×, meski ada kecepatan yang disimpan untuk semua video</string>
+    <string name="settings_chapters_open_title">Biarkan bab tetap terbuka</string>
+    <string name="settings_chapters_open_line">Memilih bab membiarkan daftar tetap terbuka, jadi bisa lanjut dari satu ke berikutnya</string>
+    <string name="settings_auto_pip_title">Picture-in-picture saat keluar</string>
+    <string name="settings_auto_pip_line">Ke layar utama saat video diputar membuatnya tetap jalan di jendela kecil</string>
 </resources>

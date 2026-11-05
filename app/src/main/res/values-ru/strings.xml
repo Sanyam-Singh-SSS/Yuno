@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compact counts (formatCount): %1$s is the number, already with the language's decimal mark ("1,2"). -->
     <string name="count_thousands">%1$s тыс.</string>

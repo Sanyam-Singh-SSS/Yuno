@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Bottom tab bar labels (MainActivity Tab, drawn by NavBar). Tight: the selected tab shows its label
          beside the icon in a shared pill; keep as short as possible (~12 characters). -->
@@ -31,7 +31,7 @@
     <!-- Notification channel name (Android Settings › Notifications). -->
     <string name="app_update_channel">Bản cập nhật ứng dụng</string>
     <!-- Notification after the app updated itself, %1$s is the version ("0.5.79"). -->
-    <string name="app_updated_title">Đã cập nhật Yuno lên %1$s</string>
+<string name="app_updated_title">Đã cập nhật Yuno lên %1$s</string>
     <string name="app_updated_text">Nhấn để mở</string>
 
     <!-- The Subscribe button (player and channel page). Short: shares a row with the bell key. -->
@@ -48,7 +48,7 @@
     <string name="app_bell_off_message_unnamed">Đã tắt thông báo của kênh này</string>
     <string name="app_bell_failed">Không thể thay đổi chuông.</string>
     <!-- Notifications were refused when asked (Android 13+). -->
-    <string name="app_bell_allow_notifications">Hãy cho phép Yuno gửi thông báo để dùng chuông.</string>
+<string name="app_bell_allow_notifications">Hãy cho phép Yuno gửi thông báo để dùng chuông.</string>
     <!-- Notifications are off in Android's settings; the settings page opens next. -->
     <string name="app_bell_turn_on_notifications">Hãy bật thông báo của Yuno để dùng chuông.</string>
 

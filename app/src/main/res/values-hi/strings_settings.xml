@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_title">सेटिंग</string>
     <string name="settings_search">सेटिंग खोजें</string>
@@ -26,7 +26,7 @@
         <item quantity="other">%1$s चैनलों की घंटी चालू</item>
     </plurals>
     <string name="settings_bells_none">अभी तक कोई घंटी चालू नहीं</string>
-    <string name="settings_bells_empty">किसी चैनल के सदस्यता लें बटन पर घंटी चालू करें, और Yuno उसके हर नए वीडियो के बारे में बताएगा.</string>
+<string name="settings_bells_empty">किसी चैनल के सदस्यता लें बटन पर घंटी चालू करें, और Yuno उसके हर नए वीडियो के बारे में बताएगा.</string>
     <string name="settings_bell_line">हर नया वीडियो</string>
     <string name="settings_system_notifications">Android की सूचना सेटिंग</string>
     <string name="settings_system_notifications_line">आवाज़, वाइब्रेशन, परेशान न करें</string>
@@ -38,8 +38,27 @@
     <string name="settings_update_available">वर्शन %1$s उपलब्ध है</string>
     <string name="settings_source">GitHub पर सोर्स कोड</string>
     <string name="settings_source_line">कोई समस्या बताएं या कोई सुविधा मांगें</string>
+<string name="settings_crash_title">क्रैश रिपोर्ट</string>
+    <string name="settings_crash_saved">पिछले क्रैश से सेव की गई। इसे शेयर करें और GitHub issue में पेस्ट करें</string>
+    <string name="settings_crash_none">कोई क्रैश सेव नहीं है। Android ने पिछली बार Yuno को कैसे बंद किया, यह GitHub issue के लिए शेयर करता है</string>
+    <string name="settings_crash_tile">क्रैश रिपोर्ट सेव हुई</string>
+    <string name="settings_crash_share">क्रैश रिपोर्ट शेयर करें</string>
     <string name="settings_made_by">%1$s ने बनाया</string>
     <string name="settings_say_hi">आइए, नमस्ते कहिए</string>
     <string name="settings_email_developer">डेवलपर को ईमेल करें</string>
     <string name="settings_no_app">इस फ़ोन पर कोई ऐप इसे नहीं खोल सकता</string>
+<string name="settings_zoom_fill_title">फ़ुलस्क्रीन में भरने के लिए ज़ूम करें</string>
+    <string name="settings_zoom_fill_on">हर वीडियो स्क्रीन भर देता है; बाहर निकले किनारे कट जाते हैं। पूरा वीडियो देखने के लिए उंगलियाँ पास लाएँ।</string>
+    <string name="settings_zoom_fill_off">वीडियो पूरे दिखते हैं, काली पट्टियों के साथ। फ़ुलस्क्रीन में स्क्रीन भरने के लिए उंगलियाँ फैलाएँ।</string>
+    <string name="settings_zoom_fill_summary">भरने के लिए ज़ूम</string>
+    <string name="settings_seek_step_title">पीछे और आगे जाना</string>
+    <string name="settings_seek_step_line">वीडियो पर दो बार टैप करने और −/⁠+ बटन से कितना आगे-पीछे जाए</string>
+    <string name="settings_seconds_short">%1$s से॰</string>
+    <string name="settings_seek_step_summary">%1$s से॰ की छलांग</string>
+    <string name="settings_music_normal_title">संगीत सामान्य गति पर</string>
+    <string name="settings_music_normal_line">गाने हमेशा 1× पर चलते हैं, भले ही हर वीडियो के लिए कोई गति रखी हो</string>
+    <string name="settings_chapters_open_title">अध्याय खुले रखें</string>
+    <string name="settings_chapters_open_line">अध्याय चुनने पर सूची खुली रहती है, ताकि एक से दूसरे पर जा सकें</string>
+    <string name="settings_auto_pip_title">बाहर जाने पर पिक्चर-इन-पिक्चर</string>
+    <string name="settings_auto_pip_line">वीडियो चलते हुए होम पर जाने से वह एक छोटी विंडो में चलता रहता है</string>
 </resources>

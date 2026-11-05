@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name" translatable="false">Yuno</string>
 
     <!-- Compact counts (formatCount): %1$s is the number, already with the language's decimal mark ("1,2"). -->
