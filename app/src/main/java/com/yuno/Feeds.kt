@@ -5,13 +5,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -86,8 +82,6 @@ class FeedState(
     /** Ids already put in front of the user this session (fresh-refresh feeds only). */
     private val shown = HashSet<String>()
     private var job: Job? = null
-    /** Last good page per Home category chip (title key), so tab swipes can show the neighbour feed. */
-    private val chipSnapshots = mutableStateMapOf<String, ChipSnapshot>()
     val hasMore get() = next != null
     /** The next page's token (for a pager that pages on by itself, like Shorts over a channel's list). */
     val nextToken get() = next
@@ -109,43 +103,10 @@ class FeedState(
      * shown, goes back to the plain feed. The chips row stays as it is meanwhile.
      */
     fun selectChip(pick: FeedChip) {
-        saveChipSnapshot()
         chip = if (pick.token == null || pick.title == chip?.title) null else pick
-        restoreChipSnapshotOrLoad()
-    }
-
-    /** Cached rows for a chip when it is not the one currently loading in [chip]. */
-    fun snapshotFor(pick: FeedChip): ChipSnapshot? {
-        val key = chipSnapshotKey(if (pick.token == null) null else pick)
-        if (key == chipSnapshotKey(chip)) {
-            return ChipSnapshot(videos, next, error, loading || waiting)
-        }
-        return chipSnapshots[key]
-    }
-
-    private fun saveChipSnapshot() {
-        if (videos.isEmpty() && error == null && !loading) return
-        chipSnapshots[chipSnapshotKey(chip)] = ChipSnapshot(videos, next, error, loading)
-    }
-
-    private fun restoreChipSnapshotOrLoad() {
-        val hit = chipSnapshots[chipSnapshotKey(chip)]
-        if (hit != null && (hit.videos.isNotEmpty() || hit.error != null)) {
-            videos = hit.videos
-            next = hit.next
-            error = hit.error
-            loading = false
-            refreshing = false
-            loaded = true
-            generation++
-            return
-        }
-        videos = emptyList()
-        next = null
+        videos = emptyList(); next = null
         load(fresh = false)
     }
-
-    private fun chipSnapshotKey(c: FeedChip?) = c?.title ?: "\u0000"
 
     /**
      * Loads the first page of what's chosen. The plain feed takes its chips from the answer;
@@ -177,9 +138,8 @@ class FeedState(
                         if (freshOnRefresh) it.videos.forEach { v -> shown += v.id }
                     }
                     it.videos.take(prefetchTop).forEach { v -> StreamCache.prefetch(v.id) }
-                    saveChipSnapshot()
                 }
-                .onFailure { error = friendly(it); saveChipSnapshot() }
+                .onFailure { error = friendly(it) }
             loading = false
             refreshing = false
         }
@@ -200,9 +160,8 @@ class FeedState(
                     videos = videos + added
                     if (freshOnRefresh && pick == null) added.forEach { v -> shown += v.id }
                     next = page.next
-                    saveChipSnapshot()
                 }
-                .onFailure { error = friendly(it); saveChipSnapshot() }
+                .onFailure { error = friendly(it) }
             loading = false
         }
     }
@@ -232,15 +191,7 @@ class FeedState(
         shown.clear()
         videos = emptyList(); next = null; loaded = false; loading = false; error = null
         chips = emptyList(); chip = null; landedAt = 0L
-        chipSnapshots.clear()
     }
-
-    data class ChipSnapshot(
-        val videos: List<VideoItem>,
-        val next: String?,
-        val error: String?,
-        val loading: Boolean,
-    )
 
     private companion object {
         const val FRESH_TARGET = 16
@@ -421,40 +372,7 @@ object Dismissed {
     }
 }
 
-internal fun feedChipSelectedIndex(chips: List<FeedChip>, chosen: FeedChip?): Int {
-    val i = chips.indexOfFirst { chosen?.let { ch -> ch.title == it.title } ?: (it.token == null) }
-    return if (i >= 0) i else 0
-}
-
-internal data class HomeChipPage(
-    val videos: List<VideoItem>,
-    val error: String?,
-    val tailLoading: Boolean,
-)
-
-internal fun homeChipPage(
-    feed: FeedState,
-    chips: List<FeedChip>,
-    page: Int,
-    chipIndex: Int,
-    targetPage: Int,
-    scrolling: Boolean,
-): HomeChipPage {
-    val pick = chips[page]
-    val active = page == chipIndex
-    val snap = feed.snapshotFor(pick)
-    val videos = if (active) feed.videos else snap?.videos.orEmpty()
-    val error = if (active) feed.error else snap?.error
-    val tailLoading = when {
-        active -> feed.loading || feed.waiting || feed.hasMore
-        snap != null -> snap.next != null
-        else -> scrolling && page == targetPage
-    }
-    return HomeChipPage(videos, error, tailLoading)
-}
-
 /** A feed as a column of video cards with infinite scroll and designed loading/error states. */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FeedList(
     feed: FeedState,
@@ -475,12 +393,6 @@ fun FeedList(
     filterScrollKey: Any? = null,
     /** Subscription channel avatars to avoid extra lookups on playlist rows. */
     channelAvatarSeed: Map<String, String?> = emptyMap(),
-    /** Home category tabs: only the video block swipes; header stays in the outer list. */
-    chipPagerState: PagerState? = null,
-    chips: List<FeedChip> = emptyList(),
-    chipIndex: Int = 0,
-    chipTargetPage: Int = 0,
-    chipScrolling: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
     val listVideos = videos ?: feed.videos
@@ -498,89 +410,30 @@ fun FeedList(
             last >= list.layoutInfo.totalItemsCount - 4
         }
     }
-    LaunchedEffect(nearEnd, listVideos.size, chipPagerState) {
-        if (chipPagerState != null) return@LaunchedEffect
-        if (nearEnd && listVideos.isNotEmpty()) feed.loadMore()
-    }
+    LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
     val columns = gridColumns()
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
     LazyColumn(state = list, contentPadding = contentPadding) {
         header()
-        if (chipPagerState != null && chips.size > 1) {
-            item(key = "chip-videos") {
-                HorizontalPager(
-                    state = chipPagerState,
-                    modifier = Modifier
-                        .fillParentMaxHeight()
-                        .fillMaxWidth(),
-                    beyondViewportPageCount = 1,
-                ) { page ->
-                    val pageModel = homeChipPage(feed, chips, page, chipIndex, chipTargetPage, chipScrolling)
-                    val inner = rememberLazyListState()
-                    LaunchedEffect(feed.generation) { inner.scrollToItem(0) }
-                    LaunchedEffect(pageModel.videos, channelAvatarSeed) {
-                        ChannelAvatars.resolve(scope, pageModel.videos, channelAvatarSeed)
-                    }
-                    val nearInner by remember {
-                        derivedStateOf {
-                            val last = inner.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            last >= inner.layoutInfo.totalItemsCount - 4
-                        }
-                    }
-                    LaunchedEffect(nearInner, pageModel.videos.size, page == chipIndex) {
-                        if (page == chipIndex && nearInner && pageModel.videos.isNotEmpty()) feed.loadMore()
-                    }
-                    val bottomPad = contentPadding.calculateBottomPadding()
-                    LazyColumn(
-                        state = inner,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = bottomPad),
-                    ) {
-                        chipPageItems(pageModel, columns, onOpen, gridExtra, feed, c)
-                    }
+        videoCards(listVideos, columns, onOpen, extra = gridExtra)
+        when {
+            // No keys on these trailing items: a keyed loader at index 0 makes LazyColumn
+            // hold it in view when videos arrive above it, landing at the bottom of the page.
+            feed.error != null && listVideos.isEmpty() -> item {
+                EmptyState(
+                    icon = Icons.Rounded.CloudOff,
+                    title = stringResource(R.string.ui_feed_error_title),
+                    body = feed.error.orEmpty(),
+                    action = { PillButton(stringResource(R.string.ui_try_again), { feed.refresh() }) },
+                )
+            }
+            feed.loading || feed.hasMore -> item {
+                Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                 }
             }
-        } else {
-            videoCards(listVideos, columns, onOpen, extra = gridExtra)
-            feedTailItems(feed.error, listVideos, feed.loading || feed.hasMore, feed, c)
         }
     }
-    }
-}
-
-private fun LazyListScope.chipPageItems(
-    page: HomeChipPage,
-    columns: Int,
-    onOpen: (VideoItem) -> Unit,
-    gridExtra: (@Composable (Modifier) -> Unit)?,
-    feed: FeedState,
-    c: androidx.compose.material3.ColorScheme,
-) {
-    videoCards(page.videos, columns, onOpen, extra = gridExtra)
-    feedTailItems(page.error, page.videos, page.tailLoading, feed, c)
-}
-
-private fun LazyListScope.feedTailItems(
-    emptyError: String?,
-    listVideos: List<VideoItem>,
-    tailBusy: Boolean,
-    feed: FeedState,
-    c: androidx.compose.material3.ColorScheme,
-) {
-    when {
-        emptyError != null && listVideos.isEmpty() -> item {
-            EmptyState(
-                icon = Icons.Rounded.CloudOff,
-                title = stringResource(R.string.ui_feed_error_title),
-                body = emptyError.orEmpty(),
-                action = { PillButton(stringResource(R.string.ui_try_again), { feed.refresh() }) },
-            )
-        }
-        tailBusy -> item {
-            Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-            }
-        }
     }
 }
 
