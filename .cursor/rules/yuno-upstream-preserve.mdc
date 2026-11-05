@@ -38,6 +38,8 @@ On an upstream merge, ask only if that update **conflicts with or rewrites** one
 - **Keep** — move the line under **Always keep**.
 - **Let Skipii replace it** — drop the line and follow upstream for that spot.
 
+- Loading skeletons (`Skeleton.kt`) on feeds, the channel page, and comments. Spinners stay for playback, sign-in, and posting.
+
 ## Ask on each merge
 
 - **Playback / extraction / deps:** `YouTube.kt`, `PlayerFallback.kt`, `PlaybackService.kt`, parsers, Gradle/Media3, ProGuard.

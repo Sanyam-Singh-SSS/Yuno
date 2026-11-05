@@ -33,6 +33,8 @@ On a later Skipii merge, ask only if that update **conflicts with or rewrites** 
 - **Keep** — move the line into **Look & feel** / **Always keep**.
 - **Let Skipii replace it** — delete the line and take upstream there.
 
+- Loading skeletons (`Skeleton.kt`) on feeds, the channel page, and comments. Spinners stay for playback, sign-in, and posting.
+
 ## Ask on each merge
 
 - Playback, extraction, bot-check, SponsorBlock **service**, Media3/NewPipe/Gradle deps.

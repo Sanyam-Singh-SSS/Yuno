@@ -315,7 +315,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            state.loading -> CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(22.dp))
+            state.loading -> CommentSkeleton(avatar = 30.dp)
             state.error != null -> Text(state.error.orEmpty(), color = c.onSurfaceVariant, fontSize = 13.5.sp)
             else -> Text(stringResource(if (Account.signedIn) R.string.comments_none_add_first else R.string.comments_none), color = c.onSurfaceVariant, fontSize = 13.5.sp)
         }
@@ -352,9 +352,7 @@ fun CommentsPanel(state: CommentsState, partialTop: Dp, onClose: () -> Unit) {
         LazyColumn(state = list, modifier = listModifier) {
             items(state.comments, key = { it.id }) { comment -> CommentRow(comment, state) }
             if (state.loading || state.hasMore) item {
-                Box(Modifier.fillMaxWidth().padding(20.dp), Alignment.Center) {
-                    CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
-                }
+                if (state.comments.isEmpty()) CommentSkeletons() else CommentSkeleton()
             }
             if (!state.loading && state.comments.isEmpty()) item {
                 Text(
@@ -523,9 +521,7 @@ fun LazyListScope.inlineComments(state: CommentsState) {
         state.loading || state.hasMore -> item(key = "commentsMore") {
             // Composed as it nears the screen: that's the cue for the next page.
             LaunchedEffect(state.comments.size) { state.loadMore() }
-            Box(Modifier.fillMaxWidth().padding(20.dp), Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
-            }
+            if (state.comments.isEmpty()) CommentSkeletons() else CommentSkeleton()
         }
         state.comments.isEmpty() -> item(key = "commentsNone") {
             Text(

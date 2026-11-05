@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.VideoLibrary
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -340,9 +340,9 @@ fun ChannelScreen(
                 Icons.Rounded.CloudOff, stringResource(R.string.ui_channel_error_title), state.error.orEmpty(),
                 action = { PillButton(stringResource(R.string.ui_try_again), state::load) },
             ) }
-            d == null -> Box(Modifier.fillMaxWidth().padding(top = top + 60.dp), Alignment.Center) {
-                CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
-            }
+            d == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding.withTop(top)),
+            ) { ChannelSkeletons() }
             else -> LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
                 item(key = ProfileKey) { ChannelProfile(state, d, onMessage) }
                 if (hasTabs) item(key = TabsKey) {
@@ -469,11 +469,7 @@ private fun LazyListScope.feedTail(more: Boolean, error: String?, retry: () -> U
                 EmptyState(icon = Icons.Rounded.VideoLibrary, title = stringResource(R.string.ui_playlist_empty_title), body = stringResource(empty))
             }
         }
-        more -> item {
-            Box((if (alone) Modifier.fillParentMaxHeight() else Modifier).fillMaxWidth().padding(28.dp), Alignment.TopCenter) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-            }
-        }
+        more -> item { if (alone) FeedSkeletons() else FeedSkeletons(1) }
     }
 }
 

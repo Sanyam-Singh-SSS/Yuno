@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -394,7 +393,6 @@ fun FeedList(
     /** Subscription channel avatars to avoid extra lookups on playlist rows. */
     channelAvatarSeed: Map<String, String?> = emptyMap(),
 ) {
-    val c = MaterialTheme.colorScheme
     val listVideos = videos ?: feed.videos
     val scope = rememberCoroutineScope()
     LaunchedEffect(listVideos, channelAvatarSeed) {
@@ -427,11 +425,8 @@ fun FeedList(
                     action = { PillButton(stringResource(R.string.ui_try_again), { feed.refresh() }) },
                 )
             }
-            feed.loading || feed.hasMore -> item {
-                Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
-                    CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
-                }
-            }
+            feed.loading && listVideos.isEmpty() -> item { FeedSkeletons() }
+            feed.loading || feed.hasMore -> item { FeedSkeletons(1) }
         }
     }
     }
