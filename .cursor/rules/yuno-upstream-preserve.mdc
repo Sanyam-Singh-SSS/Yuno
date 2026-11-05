@@ -1,11 +1,11 @@
 ---
-description: When merging Skipii upstream — preserve Yuno UI, branding, and shell; do not overwrite without Derek's OK
+description: When merging Skipii upstream — preserve Yuno UI, branding, and shell; do not overwrite without the user's OK
 alwaysApply: true
 ---
 
 # Yuno-only — do not overwrite on Skipii merges
 
-Yuno tracks **deciocrytek/Skipii** (`git remote upstream`) but is its own app. When bringing in upstream commits, **port Skipii fixes/features without reverting Yuno product/UI** unless Derek explicitly says otherwise.
+Yuno tracks **deciocrytek/Skipii** (`git remote upstream`) but is its own app. When bringing in upstream commits, **port Skipii fixes/features without reverting Yuno product/UI** unless the user explicitly says otherwise.
 
 **Authoritative detail:** `docs/yuno-preserve-on-merge.md`.
 
@@ -29,20 +29,20 @@ When a Skipii update adds or changes a feature, **port the upstream code** (`com
 | **Thumbnails** | `sharpenFeedThumbnail` + `UiKit.kt` `Thumbnail` styling. |
 | **Shorts look** | Yuno glass rail stays. Drag-to-seek, the double-tap thumb burst, and the progress line are **upstream `Shorts.kt`** (`scrubTo` / `endScrub`, `shortTaps`, `ThumbBurst`, `Line*`), not a rewrite. |
 
-## Derek’s own changes — ask on the next merge
+## Your changes — ask only if an update touches them
 
-When Derek changes or adds something in Yuno (a layout, a screen, a setting, a behavior), write it here **and** in `docs/yuno-preserve-on-merge.md` in the same turn, without being asked. One line: what changed, and where it lives. Do not file it under **Always keep** or **OK to follow upstream** until he decides.
+When you change or add something in Yuno (a layout, a screen, a setting, a behavior), write it here **and** in `docs/yuno-preserve-on-merge.md` in the same turn, without being asked. One line: what changed, and where it lives. Do not file it under **Always keep** or **OK to follow upstream** until you decide.
 
 On an upstream merge, ask only if that update **conflicts with or rewrites** one of these lines. Leave the others alone and do not ask about them. For each one Skipii actually changes, ask whether to **keep** it or **let Skipii replace it**.
 
 - **Keep** — move the line under **Always keep**.
 - **Let Skipii replace it** — drop the line and follow upstream for that spot.
 
-## Ask Derek each merge
+## Ask on each merge
 
 - **Playback / extraction / deps:** `YouTube.kt`, `PlayerFallback.kt`, `PlaybackService.kt`, parsers, Gradle/Media3, ProGuard.
 - **Shorts disk bank:** large `ShortsBank.kt` changes — confirm first.
-- A line under **Derek’s own changes** only when this update conflicts with it or rewrites that spot.
+- A line under **Your changes** only when this update conflicts with it or rewrites that spot.
 
 ## OK to follow upstream (unless it breaks “Always keep”)
 
@@ -59,19 +59,19 @@ On an upstream merge, ask only if that update **conflicts with or rewrites** one
 
 ## Merge workflow
 
-1. Read this rule + `docs/yuno-preserve-on-merge.md`. If this update conflicts with or rewrites a line under **Derek’s own changes**, ask Derek before taking Skipii’s version of that spot.
+1. Read this rule + `docs/yuno-preserve-on-merge.md`. If this update conflicts with or rewrites a line under **Your changes**, ask before taking Skipii’s version of that spot.
 2. `git merge upstream/main` (or tag); resolve **file-by-file**.
 3. `rg -i "skipii|castii|com\\.skipii|PlayerBar" app/src` — investigate hits; confirm release repo still **Yuno**.
 4. `./gradlew assembleDebug`; `testDebugUnitTest` if parsers changed.
 5. **End-of-update review** (do this every merge, without being asked). Two numbered lists, numbers continuing:
    - **Left out** — user-visible Skipii changes not shipped in Yuno (on purpose or missed).
    - **Added** — user-visible Skipii changes that did land.
-6. Wait for Derek: `1. agree`, `2. disagree`, and so on.
+6. Wait for answers: `1. agree`, `2. disagree`, and so on.
    - **Left out + agree** — keep it out. If that protection is missing from this rule and `docs/yuno-preserve-on-merge.md`, add it under **Always keep**.
    - **Left out + disagree** — port that Skipii behavior into Yuno, then record it under **OK to follow upstream** (and remove any “always keep” line that blocks it).
    - **Added + agree** — keep it. Record it under **OK to follow upstream** if it is not already there. If it is only in code and not actually on screen, wire it before calling it added.
    - **Added + disagree** — take it back out and protect the Yuno behavior under **Always keep**.
-7. After that pass, post a **fresh** numbered left-out / added list (what is true now, not the list Derek just voted on). **Keep posting a new list after every fix pass until Derek says all is good.**
-8. Summarize: upstream range, what changed in the rule, anything still waiting on Derek.
+7. After that pass, post a **fresh** numbered left-out / added list (what is true now, not the list just voted on). **Keep posting a new list after every fix pass until you say all is good.**
+8. Summarize: upstream range, what changed in the rule, anything still waiting on an answer.
 
-**Never commit or push** unless Derek asks.
+**Never commit or push** unless you ask.
