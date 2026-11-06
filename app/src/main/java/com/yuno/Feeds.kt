@@ -441,6 +441,7 @@ fun FeedList(
 /**
  * Swipe down at the top to reload (replaces the old refresh button). The indicator uses
  * the theme's colors and sits just under the screen header.
+ * Home does not use this — it stretches the top bar via [BarPullRefresh].
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable

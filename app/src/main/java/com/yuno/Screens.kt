@@ -109,7 +109,8 @@ fun HomeScreen(
     val signedIn = Account.signedIn
     LaunchedEffect(signedIn) { lib.home.ensureLoaded() }
     val listState = rememberLazyListState()
-    Box(Modifier.fillMaxSize()) {
+    // The bar itself is the refresh control. Other feeds still use the circular indicator.
+    BarPullRefresh(refreshing = lib.home.refreshing, onRefresh = lib.home::refresh) {
         Box(Modifier.fillMaxSize()) {
             FeedList(
                 lib.home,
@@ -124,7 +125,7 @@ fun HomeScreen(
                     }
                 },
                 scrollToTop = scrollToTop,
-                indicatorTop = topBarHeight(),
+                pullToRefresh = false,
                 listState = listState,
             )
             PageTopFade(listState)

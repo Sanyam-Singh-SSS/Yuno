@@ -221,23 +221,30 @@ private const val WordmarkAspect = 1438f / 736f
 
 @Composable
 fun LargePageBrandMark(modifier: Modifier = Modifier) {
+    val pull = LocalBarPullRefresh.current
+    val extra = pull?.extraPadding() ?: 0.dp
     val inset = (LargePageTitleBlockHeight - LargePageBrandMarkSize) / 2
     val ink = MaterialTheme.colorScheme.onBackground
-    Image(
-        painter = painterResource(R.drawable.wordmark),
-        contentDescription = "Yuno",
-        modifier = modifier
+    BarPullReveal(
+        modifier
             .padding(
                 start = PageGutter,
                 end = PageGutter,
-                top = inset,
-                bottom = inset + LargePageTitleContentGap,
+                top = inset + extra,
+                bottom = inset + LargePageTitleContentGap + extra,
             )
             .height(LargePageBrandMarkSize)
-            .aspectRatio(WordmarkAspect),
-        contentScale = ContentScale.Fit,
-        colorFilter = ColorFilter.tint(ink, BlendMode.SrcIn),
-    )
+            .aspectRatio(WordmarkAspect)
+            .pullScale(pull?.markScale() ?: 1f),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.wordmark),
+            contentDescription = "Yuno",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.tint(ink, BlendMode.SrcIn),
+        )
+    }
 }
 
 /** Default in-list page title size; [LargePageTitleCompactFontSize] on Subscriptions / Library. */
@@ -255,27 +262,42 @@ fun LargePageTitle(
     /** False on overlay pages (playlist, …) that already inset with [pageBodyTop]. */
     barAligned: Boolean = true,
 ) {
+    val pull = LocalBarPullRefresh.current
+    val extra = pull?.extraPadding() ?: 0.dp
     val inset = if (barAligned) (LargePageTitleBlockHeight - titleCapHeight(fontSize)) / 2 else 0.dp
-    Text(
-        text = title,
-        modifier = modifier.padding(
-            start = PageGutter,
-            end = PageGutter,
-            top = inset,
-            bottom = if (barAligned) inset + LargePageTitleContentGap else LargePageTitleContentGap,
+    val bottom = (if (barAligned) inset + LargePageTitleContentGap else LargePageTitleContentGap) + extra
+    val style = OwnDirectionText.merge(
+        TextStyle(
+            fontFamily = SfProDisplay,
+            fontWeight = FontWeight.W800,
+            fontSize = fontSize,
+            letterSpacing = (-0.5).sp,
+            color = MaterialTheme.colorScheme.onBackground,
         ),
-        style = OwnDirectionText.merge(
-            TextStyle(
-                fontFamily = SfProDisplay,
-                fontWeight = FontWeight.W800,
-                fontSize = fontSize,
-                letterSpacing = (-0.5).sp,
-                color = MaterialTheme.colorScheme.onBackground,
-            ),
-        ),
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
     )
+    if (pull == null) {
+        Text(
+            text = title,
+            modifier = modifier.padding(
+                start = PageGutter,
+                end = PageGutter,
+                top = inset,
+                bottom = if (barAligned) inset + LargePageTitleContentGap else LargePageTitleContentGap,
+            ),
+            style = style,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        return
+    }
+    // Same growth as the wordmark, so a later page can opt in by wrapping itself in BarPullRefresh.
+    BarPullReveal(
+        modifier
+            .padding(start = PageGutter, end = PageGutter, top = inset + extra, bottom = bottom)
+            .pullScale(pull.markScale()),
+    ) {
+        Text(text = title, style = style, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /**
@@ -320,6 +342,9 @@ fun PageTopBar(
     // False while the page is closing. The exit animation keeps the screen
     // composed, and without this the search field would stay until that finished.
     shown: Boolean = true,
+    // Passed through to the chrome layer. That layer is outside the page, so it
+    // cannot see [LocalBarPullRefresh] itself.
+    pull: BarPullRefreshState? = null,
     actions: @Composable () -> Unit = {},
 ) {
     val glass = LocalLiquidGlassEnabled.current && isGlassSupported()
@@ -330,6 +355,7 @@ fun PageTopBar(
     // buttons are part of the snapshot, so there is nothing behind them to blur.
     if (host != null && !LocalTopChromeDrawing.current) {
         if (shown) {
+            val pullState = pull ?: LocalBarPullRefresh.current
             val entry = remember { TopChromeEntry() }
             DisposableEffect(host, entry) {
                 host.entries.add(entry)
@@ -340,7 +366,7 @@ fun PageTopBar(
                 }
             }
             SideEffect {
-                entry.content = { PageTopBar(onBack, accessory, actions = actions) }
+                entry.content = { PageTopBar(onBack, accessory, pull = pullState, actions = actions) }
                 host.tick++
             }
         }
@@ -348,10 +374,12 @@ fun PageTopBar(
     }
     if (!shown) return
     val iconTint = if (glass) glassContentColor() else MaterialTheme.colorScheme.onSurface
+    val extra = (pull ?: LocalBarPullRefresh.current)?.extraPadding() ?: 0.dp
     Box(
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
+            .then(if (extra > 0.dp) Modifier.padding(top = extra, bottom = extra) else Modifier)
             .height(TopBarContentHeight),
     ) {
         if (onBack != null) {
