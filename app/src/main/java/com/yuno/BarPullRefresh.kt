@@ -76,10 +76,7 @@ class BarPullRefreshState {
     /** 0 at rest. Peaks at 1 for the little pop when a reload settles. */
     var jump by mutableFloatStateOf(0f)
 
-    /** Extra scale at full stretch. A smaller value grows more slowly over the same pull. */
-    var grow by mutableFloatStateOf(BarPullGrow)
-
-    /** 0 at rest, 1 when the mark is as large as it gets. */
+    /** 0 at rest. Caps when the mark is as large as it gets, even if the pull goes further. */
     val stretch: Float
         get() = if (thresholdPx <= 0f) 0f else (offsetPx / thresholdPx).coerceIn(0f, BarPullRubber)
 
@@ -88,9 +85,20 @@ class BarPullRefreshState {
 
     fun atSizeLimit(): Boolean = thresholdPx > 0f && offsetPx >= thresholdPx * BarPullRubber
 
-    fun extraPadding(): Dp = BarPullExtra * stretch
+    /**
+     * Top and bottom padding. Reaches [BarPullExtra] plus [BarPullExtraMore] at the reload
+     * point, then keeps growing if the pull continues. The mark size and fill do not.
+     */
+    fun extraPadding(): Dp {
+        if (thresholdPx <= 0f) return 0.dp
+        val limitPx = thresholdPx * BarPullRubber
+        val atLimit = BarPullExtra * BarPullRubber + BarPullExtraMore
+        val toward = (offsetPx / limitPx).coerceIn(0f, 1f)
+        val past = ((offsetPx - limitPx) / thresholdPx).coerceIn(0f, BarPullPadPast)
+        return atLimit * toward + (atLimit / BarPullRubber) * past
+    }
 
-    fun markScale(): Float = (1f + grow * stretch) * (1f + BarPullJump * jump)
+    fun markScale(): Float = (1f + BarPullGrow * stretch) * (1f + BarPullJump * jump)
 }
 
 val LocalBarPullRefresh = staticCompositionLocalOf<BarPullRefreshState?> { null }
@@ -98,20 +106,23 @@ val LocalBarPullRefresh = staticCompositionLocalOf<BarPullRefreshState?> { null 
 /** How far the finger has to pull the bar before a release reloads. */
 private val BarPullThreshold = 68.dp
 
-/** Top and bottom padding added to the bar at the reload point. */
+/** Top and bottom padding added along the pull, before the extra at the reload point. */
 private val BarPullExtra = 24.dp
 
-/** Wordmark / Library title growth at the reload point (1 + this). */
-internal const val BarPullGrow = 0.28f
+/** Extra top and bottom padding once the mark is full. Pulling further still adds more. */
+private val BarPullExtraMore = 6.dp
 
-/** Subscriptions title grows a bit less, over the same pull. */
-internal const val BarPullSubscriptionsGrow = 0.16f
+/** Wordmark / title growth at the reload point (1 + this). */
+private const val BarPullGrow = 0.16f
 
 /** Share of the pull at which the mark is already at 20% opacity. */
 private const val BarPullFadeSpan = 0.22f
 
-/** Extra travel after the fill completes, as a multiple of [BarPullThreshold]. */
+/** Extra travel after the fill completes, as a multiple of [BarPullThreshold]. The mark stops here. */
 private const val BarPullRubber = 1.22f
+
+/** How far past the reload point padding can still grow, as a multiple of [BarPullThreshold]. */
+private const val BarPullPadPast = 0.45f
 
 /** How much bigger the mark gets at the top of the settle pop. */
 private const val BarPullJump = 0.065f
@@ -172,7 +183,6 @@ fun BarPullRefresh(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     enabled: Boolean = true,
-    grow: Float = BarPullGrow,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -181,7 +191,6 @@ fun BarPullRefresh(
             thresholdPx = with(density) { BarPullThreshold.toPx() }
         }
     }
-    state.grow = grow
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val reduced = rememberReducedMotion()
@@ -349,16 +358,23 @@ private class BarPullConnection(
         // A cancelled spring used to leave this set, so the next hit of the limit was silent.
         if (!state.atSizeLimit()) crossed = false
         settle?.cancel()
-        val max = state.thresholdPx * BarPullRubber
-        val resistance = if (state.offsetPx < state.thresholdPx) 0.66f else 0.28f
-        val room = (max - state.offsetPx).coerceAtLeast(0f)
+        val markMax = state.thresholdPx * BarPullRubber
+        val padMax = state.thresholdPx * (BarPullRubber + BarPullPadPast)
+        val resistance = when {
+            state.offsetPx >= markMax -> 0.2f
+            state.offsetPx < state.thresholdPx -> 0.66f
+            else -> 0.28f
+        }
+        val room = (padMax - state.offsetPx).coerceAtLeast(0f)
         val wanted = available.y * resistance
         val before = state.offsetPx
-        // Snap onto the cap. Adding the leftover by hand can stop a hair short, so the
-        // click never fires even though the mark looks fully grown.
-        val hitCap = room > 0f && wanted >= room
-        state.offsetPx = if (hitCap) max else before + wanted.coerceAtMost(room)
-        if (!crossed && hitCap) {
+        // Snap onto the padding cap, and onto the reload point when a frame would
+        // cross it. A short float can stop a hair under, and then the click never fires.
+        val hitPad = room > 0f && wanted >= room
+        var next = if (hitPad) padMax else before + wanted.coerceAtMost(room)
+        if (before < markMax && wanted >= markMax - before) next = next.coerceAtLeast(markMax)
+        state.offsetPx = next
+        if (!crossed && before < markMax && state.offsetPx >= markMax) {
             crossed = true
             view.pullClick()
         }

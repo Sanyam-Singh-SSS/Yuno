@@ -173,11 +173,7 @@ fun SubscriptionsScreen(
         }
         return
     }
-    BarPullRefresh(
-        refreshing = lib.subscriptions.refreshing,
-        onRefresh = lib.subscriptions::refresh,
-        grow = BarPullSubscriptionsGrow,
-    ) {
+    BarPullRefresh(refreshing = lib.subscriptions.refreshing, onRefresh = lib.subscriptions::refresh) {
         Box(Modifier.fillMaxSize()) {
             FeedList(
                 lib.subscriptions,
