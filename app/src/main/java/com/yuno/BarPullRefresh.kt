@@ -70,13 +70,14 @@ class BarPullRefreshState {
     /** 0 at rest. Peaks at 1 for the little pop when a reload settles. */
     var jump by mutableFloatStateOf(0f)
 
-    /** 0 at rest, 1 once the white fill has reached the far edge. */
-    val fraction: Float
-        get() = if (thresholdPx <= 0f) 0f else (offsetPx / thresholdPx).coerceIn(0f, 1f)
-
-    /** Like [fraction], but keeps a little travel past the edge for the rubber band. */
+    /** 0 at rest, 1 when the mark is as large as it gets. */
     val stretch: Float
         get() = if (thresholdPx <= 0f) 0f else (offsetPx / thresholdPx).coerceIn(0f, BarPullRubber)
+
+    /** White coverage. Hits the right edge at the same moment [stretch] maxes out. */
+    fun fill(): Float = if (stretch <= 0f) 0f else (stretch / BarPullRubber).coerceIn(0f, 1f)
+
+    fun atSizeLimit(): Boolean = thresholdPx > 0f && offsetPx >= thresholdPx * BarPullRubber
 
     fun extraPadding(): Dp = BarPullExtra * stretch
 
@@ -171,8 +172,9 @@ fun BarPullRefresh(
     val scope = rememberCoroutineScope()
     val reduced = rememberReducedMotion()
     val onRefreshState = rememberUpdatedState(onRefresh)
-    val enabledState = rememberUpdatedState(enabled && !refreshing)
+    val enabledState = rememberUpdatedState(enabled)
     val reducedState = rememberUpdatedState(reduced)
+    val refreshingNow = rememberUpdatedState(refreshing)
     val connection = remember(state, scope, view) {
         BarPullConnection(
             state = state,
@@ -180,10 +182,11 @@ fun BarPullRefresh(
             view = view,
             enabled = { enabledState.value },
             reduced = { reducedState.value },
+            // Size and the threshold click still run. A second release does not restart the fill.
+            reloading = { refreshingNow.value || state.shimmer >= 0f },
             onRefresh = { onRefreshState.value.invoke() },
         )
     }
-    val refreshingNow = rememberUpdatedState(refreshing)
     LaunchedEffect(reduced) {
         if (reduced) state.shimmer = -1f
         snapshotFlow { refreshingNow.value }.collect { active ->
@@ -239,15 +242,15 @@ fun BarPullReveal(
         Box(modifier) { content() }
         return
     }
-    val fraction = state.fraction
+    val fill = state.fill()
     val shimmer = state.shimmer
-    val armed = fraction >= 0.999f && shimmer < 0f
+    val armed = state.atSizeLimit() && shimmer < 0f
     // Unfilled glyphs fall to 20% in the first part of the pull, then stay there
     // so the solid white reads against them. Covering the last of the mark leaves it fully opaque.
     val fade = when {
         shimmer >= 0f -> 0.2f
         armed -> 1f
-        else -> 1f - 0.8f * (fraction / BarPullFadeSpan).coerceIn(0f, 1f)
+        else -> 1f - 0.8f * (fill / BarPullFadeSpan).coerceIn(0f, 1f)
     }
     val reloading = shimmer >= 0f
     Box(modifier) {
@@ -260,8 +263,8 @@ fun BarPullReveal(
                 alpha = 1f,
                 content = content,
             )
-        } else if (fraction > 0f) {
-            WhiteCopy(shape = LeftFraction(fraction), alpha = 1f, content = content)
+        } else if (fill > 0f) {
+            WhiteCopy(shape = LeftFraction(fill), alpha = 1f, content = content)
         }
     }
 }
@@ -302,6 +305,7 @@ private class BarPullConnection(
     private val view: View,
     private val enabled: () -> Boolean,
     private val reduced: () -> Boolean,
+    private val reloading: () -> Boolean,
     private val onRefresh: () -> Unit,
 ) : NestedScrollConnection {
     private var settle: Job? = null
@@ -312,7 +316,7 @@ private class BarPullConnection(
         settle?.cancel()
         val consume = available.y.coerceAtLeast(-state.offsetPx)
         state.offsetPx += consume
-        if (state.offsetPx < state.thresholdPx) crossed = false
+        if (!state.atSizeLimit()) crossed = false
         return Offset(0f, consume)
     }
 
@@ -324,7 +328,7 @@ private class BarPullConnection(
         val add = (available.y * resistance).coerceAtMost((max - state.offsetPx).coerceAtLeast(0f))
         val before = state.offsetPx
         state.offsetPx += add
-        if (!crossed && before < state.thresholdPx && state.offsetPx >= state.thresholdPx) {
+        if (!crossed && before < state.thresholdPx * BarPullRubber && state.atSizeLimit()) {
             crossed = true
             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         }
@@ -333,7 +337,7 @@ private class BarPullConnection(
 
     override suspend fun onPreFling(available: Velocity): Velocity {
         if (state.offsetPx <= 0f) return Velocity.Zero
-        val refresh = state.offsetPx >= state.thresholdPx
+        val refresh = state.atSizeLimit() && !reloading()
         settle?.cancel()
         settle = scope.launch {
             if (refresh) onRefresh()
