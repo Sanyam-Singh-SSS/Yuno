@@ -103,7 +103,56 @@ private const val BarPullRubber = 1.22f
 /** How much bigger the mark gets at the top of the settle pop. */
 private const val BarPullJump = 0.065f
 
-private const val ShimmerMs = 980f
+/** One fill or one unfill. */
+private const val StrokeMs = 280f
+
+/** Held after a completed fill, before the next unfill. */
+private const val GapMs = 500f
+
+/** fill, unfill, fill, then the half-second hold. */
+private const val IntroMs = StrokeMs * 3 + GapMs
+
+/** unfill, fill, then the half-second hold. Repeats after [IntroMs]. */
+private const val LoopMs = StrokeMs * 2 + GapMs
+
+/**
+ * Opens with fill, unfill, fill. After that: unfill, fill, and a half-second
+ * hold on the full mark, over and over. 0.5 draws as solid white.
+ */
+private fun markPhase(elapsed: Float): Float {
+    if (elapsed < IntroMs) return burstPhase(elapsed, opening = true)
+    return burstPhase((elapsed - IntroMs) % LoopMs, opening = false)
+}
+
+private fun burstPhase(t: Float, opening: Boolean): Float {
+    val unfillAt = if (opening) StrokeMs else 0f
+    val fillAt = if (opening) StrokeMs * 2 else StrokeMs
+    val doneAt = if (opening) StrokeMs * 3 else StrokeMs * 2
+    return when {
+        opening && t < StrokeMs -> (t / StrokeMs) * 0.5f
+        t < unfillAt + StrokeMs && t >= unfillAt -> 0.5f + ((t - unfillAt) / StrokeMs) * 0.5f
+        t < doneAt -> ((t - fillAt) / StrokeMs) * 0.5f
+        else -> 0.5f
+    }
+}
+
+/** Time left until the mark lands on a completed fill. A hold already has. */
+private fun playOutMs(elapsed: Float): Float {
+    if (elapsed < IntroMs) return playOutIn(elapsed, opening = true)
+    return playOutIn((elapsed - IntroMs) % LoopMs, opening = false)
+}
+
+private fun playOutIn(t: Float, opening: Boolean): Float {
+    val unfillAt = if (opening) StrokeMs else 0f
+    val fillAt = if (opening) StrokeMs * 2 else StrokeMs
+    val doneAt = if (opening) StrokeMs * 3 else StrokeMs * 2
+    return when {
+        opening && t < StrokeMs -> StrokeMs - t
+        t < unfillAt + StrokeMs && !(opening && t < StrokeMs) -> (unfillAt + StrokeMs - t) + StrokeMs
+        t < doneAt -> doneAt - t
+        else -> 0f
+    }
+}
 
 @Composable
 fun BarPullRefresh(
@@ -145,13 +194,12 @@ fun BarPullRefresh(
             var stopAt = -1f
             while (isActive) {
                 elapsed = (withFrameNanos { it } - start) / 1_000_000f
-                val phase = (elapsed % ShimmerMs) / ShimmerMs
+                val phase = markPhase(elapsed)
                 if (refreshingNow.value) {
                     stopAt = -1f
                 } else if (stopAt < 0f) {
-                    // Mid-fill: finish this fill. Mid-unfill: finish the unfill, then one more fill.
-                    val remaining = if (phase < 0.5f) 0.5f - phase else (1f - phase) + 0.5f
-                    stopAt = elapsed + remaining * ShimmerMs
+                    // Mid-fill: finish this fill. Mid-unfill or in the pause: reach the next full fill.
+                    stopAt = elapsed + playOutMs(elapsed)
                 }
                 if (stopAt >= 0f && elapsed >= stopAt) break
                 state.shimmer = phase
