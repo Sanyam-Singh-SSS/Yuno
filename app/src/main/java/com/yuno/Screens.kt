@@ -155,9 +155,30 @@ fun SubscriptionsScreen(
     val listState = rememberLazyListState()
     val top = pageContentTop()
     val showStrip = signedIn && lib.channels.isNotEmpty()
-    Box(Modifier.fillMaxSize()) {
+    if (!signedIn) {
         Box(Modifier.fillMaxSize()) {
-        if (signedIn) {
+            LazyColumn(state = listState, contentPadding = contentPadding.withTop(top)) {
+                item { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
+                item {
+                    EmptyState(
+                        icon = SfIcons.Subscriptions,
+                        title = "Your subscriptions",
+                        body = "Sign in with Google to see new videos from the channels you follow.",
+                        action = { PillButton("Sign in with Google", onSignIn) },
+                    )
+                }
+            }
+            PageTopFade(listState)
+            PageTopBar { HeaderActions(onSearch, onAccount) }
+        }
+        return
+    }
+    BarPullRefresh(
+        refreshing = lib.subscriptions.refreshing,
+        onRefresh = lib.subscriptions::refresh,
+        grow = BarPullSubscriptionsGrow,
+    ) {
+        Box(Modifier.fillMaxSize()) {
             FeedList(
                 lib.subscriptions,
                 contentPadding.withTop(top),
@@ -173,23 +194,10 @@ fun SubscriptionsScreen(
                     }
                 },
                 scrollToTop = scrollToTop,
-                indicatorTop = topBarHeight(),
+                pullToRefresh = false,
                 listState = listState,
             )
-        } else {
-            LazyColumn(state = listState, contentPadding = contentPadding.withTop(top)) {
-                item { LargePageTitle("Subscriptions", fontSize = LargePageTitleCompactFontSize) }
-                item {
-                    EmptyState(
-                        icon = SfIcons.Subscriptions,
-                        title = "Your subscriptions",
-                        body = "Sign in with Google to see new videos from the channels you follow.",
-                        action = { PillButton("Sign in with Google", onSignIn) },
-                    )
-                }
-            }
-        }
-        PageTopFade(listState)
+            PageTopFade(listState)
         }
         PageTopBar { HeaderActions(onSearch, onAccount) }
     }
@@ -361,14 +369,7 @@ fun LibraryScreen(
         }
     }
     val listState = rememberLazyListState()
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize()) {
-        PullToRefresh(
-            enabled = signedIn,
-            refreshing = lib.history.refreshing,
-            onRefresh = { lib.history.refresh(); lib.loadPlaylists() },
-            topPadding = topBarHeight(),
-        ) {
+    val libraryList: @Composable () -> Unit = {
         LazyColumn(
             state = rememberScrollToTop(scrollToTop, listState),
             contentPadding = contentPadding.withTop(pageContentTop()),
@@ -420,8 +421,22 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+    if (!signedIn) {
+        Box(Modifier.fillMaxSize()) {
+            libraryList()
+            PageTopFade(listState)
+            PageTopBar { HeaderActions(onSearch, onAccount) }
         }
-        PageTopFade(listState)
+        return
+    }
+    BarPullRefresh(
+        refreshing = lib.history.refreshing,
+        onRefresh = { lib.history.refresh(); lib.loadPlaylists() },
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            libraryList()
+            PageTopFade(listState)
         }
         PageTopBar { HeaderActions(onSearch, onAccount) }
     }

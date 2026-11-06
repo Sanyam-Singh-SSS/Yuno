@@ -76,6 +76,9 @@ class BarPullRefreshState {
     /** 0 at rest. Peaks at 1 for the little pop when a reload settles. */
     var jump by mutableFloatStateOf(0f)
 
+    /** Extra scale at full stretch. A smaller value grows more slowly over the same pull. */
+    var grow by mutableFloatStateOf(BarPullGrow)
+
     /** 0 at rest, 1 when the mark is as large as it gets. */
     val stretch: Float
         get() = if (thresholdPx <= 0f) 0f else (offsetPx / thresholdPx).coerceIn(0f, BarPullRubber)
@@ -87,7 +90,7 @@ class BarPullRefreshState {
 
     fun extraPadding(): Dp = BarPullExtra * stretch
 
-    fun markScale(): Float = (1f + BarPullGrow * stretch) * (1f + BarPullJump * jump)
+    fun markScale(): Float = (1f + grow * stretch) * (1f + BarPullJump * jump)
 }
 
 val LocalBarPullRefresh = staticCompositionLocalOf<BarPullRefreshState?> { null }
@@ -98,8 +101,11 @@ private val BarPullThreshold = 68.dp
 /** Top and bottom padding added to the bar at the reload point. */
 private val BarPullExtra = 24.dp
 
-/** Wordmark / title growth at the reload point (1 + this). */
-private const val BarPullGrow = 0.28f
+/** Wordmark / Library title growth at the reload point (1 + this). */
+internal const val BarPullGrow = 0.28f
+
+/** Subscriptions title grows a bit less, over the same pull. */
+internal const val BarPullSubscriptionsGrow = 0.16f
 
 /** Share of the pull at which the mark is already at 20% opacity. */
 private const val BarPullFadeSpan = 0.22f
@@ -166,6 +172,7 @@ fun BarPullRefresh(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     enabled: Boolean = true,
+    grow: Float = BarPullGrow,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -174,6 +181,7 @@ fun BarPullRefresh(
             thresholdPx = with(density) { BarPullThreshold.toPx() }
         }
     }
+    state.grow = grow
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val reduced = rememberReducedMotion()
