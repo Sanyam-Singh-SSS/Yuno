@@ -1,5 +1,10 @@
 package com.yuno
 
+import android.os.Build
+import android.os.VibrationAttributes
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.core.Animatable
@@ -47,6 +52,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -87,13 +93,13 @@ class BarPullRefreshState {
 val LocalBarPullRefresh = staticCompositionLocalOf<BarPullRefreshState?> { null }
 
 /** How far the finger has to pull the bar before a release reloads. */
-private val BarPullThreshold = 84.dp
+private val BarPullThreshold = 68.dp
 
 /** Top and bottom padding added to the bar at the reload point. */
 private val BarPullExtra = 24.dp
 
 /** Wordmark / title growth at the reload point (1 + this). */
-private const val BarPullGrow = 0.36f
+private const val BarPullGrow = 0.28f
 
 /** Share of the pull at which the mark is already at 20% opacity. */
 private const val BarPullFadeSpan = 0.22f
@@ -188,12 +194,16 @@ fun BarPullRefresh(
         )
     }
     LaunchedEffect(reduced) {
-        if (reduced) state.shimmer = -1f
-        snapshotFlow { refreshingNow.value }.collect { active ->
-            if (!active || reduced) return@collect
+        if (reduced) {
+            state.shimmer = -1f
+            return@LaunchedEffect
+        }
+        // Wait for each reload on its own. A refresh that starts while the
+        // previous celebration is still playing has to get a full pass too.
+        while (isActive) {
+            snapshotFlow { refreshingNow.value }.first { it }
             val start = withFrameNanos { it }
             var elapsed = 0f
-            // -1 until the reload has finished. Then the mark plays out to a completed fill.
             var stopAt = -1f
             while (isActive) {
                 elapsed = (withFrameNanos { it } - start) / 1_000_000f
@@ -208,7 +218,7 @@ fun BarPullRefresh(
                 state.shimmer = phase
             }
             state.shimmer = -1f
-            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            view.pullClick()
             if (!reduced) {
                 val pop = Animatable(0f)
                 try {
@@ -310,6 +320,8 @@ private class BarPullConnection(
 ) : NestedScrollConnection {
     private var settle: Job? = null
     private var crossed = false
+    /** This drag overlapped a reload, so letting go must not start another one. */
+    private var heldThroughReload = false
 
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
         if (source != NestedScrollSource.UserInput || available.y >= 0f || state.offsetPx <= 0f) return Offset.Zero
@@ -317,27 +329,38 @@ private class BarPullConnection(
         val consume = available.y.coerceAtLeast(-state.offsetPx)
         state.offsetPx += consume
         if (!state.atSizeLimit()) crossed = false
+        if (state.offsetPx <= 0f && !reloading()) heldThroughReload = false
         return Offset(0f, consume)
     }
 
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
         if (source != NestedScrollSource.UserInput || available.y <= 0f || !enabled()) return Offset.Zero
+        // A new pull from rest, after the reload is over, is allowed to refresh.
+        if (state.offsetPx <= 0.5f && !reloading()) heldThroughReload = false
+        if (reloading()) heldThroughReload = true
+        // A cancelled spring used to leave this set, so the next hit of the limit was silent.
+        if (!state.atSizeLimit()) crossed = false
         settle?.cancel()
         val max = state.thresholdPx * BarPullRubber
         val resistance = if (state.offsetPx < state.thresholdPx) 0.66f else 0.28f
-        val add = (available.y * resistance).coerceAtMost((max - state.offsetPx).coerceAtLeast(0f))
+        val room = (max - state.offsetPx).coerceAtLeast(0f)
+        val wanted = available.y * resistance
         val before = state.offsetPx
-        state.offsetPx += add
-        if (!crossed && before < state.thresholdPx * BarPullRubber && state.atSizeLimit()) {
+        // Snap onto the cap. Adding the leftover by hand can stop a hair short, so the
+        // click never fires even though the mark looks fully grown.
+        val hitCap = room > 0f && wanted >= room
+        state.offsetPx = if (hitCap) max else before + wanted.coerceAtMost(room)
+        if (!crossed && hitCap) {
             crossed = true
-            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            view.pullClick()
         }
         return Offset(0f, available.y)
     }
 
     override suspend fun onPreFling(available: Velocity): Velocity {
         if (state.offsetPx <= 0f) return Velocity.Zero
-        val refresh = state.atSizeLimit() && !reloading()
+        val refresh = state.atSizeLimit() && !reloading() && !heldThroughReload
+        crossed = false
         settle?.cancel()
         settle = scope.launch {
             if (refresh) onRefresh()
@@ -350,9 +373,40 @@ private class BarPullConnection(
                     state.offsetPx = value
                 }
             }
-            crossed = false
+            if (!reloading()) heldThroughReload = false
         }
         return Velocity(0f, available.y)
+    }
+}
+
+/** A soft click. Cancelling first lets a new one play even if the last is still buzzing. */
+private fun View.pullClick() {
+    val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Vibrator::class.java)
+    }
+    if (vibrator?.hasVibrator() != true) {
+        performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        return
+    }
+    vibrator.cancel()
+    if (Build.VERSION.SDK_INT >= 30 &&
+        vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK)
+    ) {
+        val effect = VibrationEffect.startComposition()
+            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.78f)
+            .compose()
+        if (Build.VERSION.SDK_INT >= 33) {
+            vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+        } else {
+            vibrator.vibrate(effect)
+        }
+    } else if (Build.VERSION.SDK_INT >= 26) {
+        vibrator.vibrate(VibrationEffect.createOneShot(16, 140))
+    } else {
+        performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
     }
 }
 
