@@ -16,6 +16,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
       - name: Assemble release
         run: ./gradlew assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
