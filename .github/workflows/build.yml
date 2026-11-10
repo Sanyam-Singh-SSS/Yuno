@@ -1,8 +1,7 @@
 name: Build
 
 on:
-workflow_dispatch:
-  push:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -17,9 +16,9 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Assemble debug and release
-        run: ./gradlew assembleDebug assembleRelease --console=plain
+      - name: Assemble release
+        run: ./gradlew assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: Yuno-apks
-          path: app/build/outputs/apk/**/*.apk
+          path: app/build/outputs/apk/release/*.apk
